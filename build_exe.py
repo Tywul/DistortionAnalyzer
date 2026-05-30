@@ -10,7 +10,7 @@ import argparse
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-DIST_DIR = ROOT / "dist" / "Distortion Analyzer"
+DIST_DIR = ROOT / "dist" / "DistortionAnalyzer"
 
 def clean() -> None:
     """Remove previous build artifacts."""
@@ -76,7 +76,7 @@ def build(skip_cleanup: bool = False) -> None:
         sys.executable, "-m", "PyInstaller",
         "--onedir",
         "--windowed",
-        "--name", "Distortion Analyzer",
+        "--name", "DistortionAnalyzer",
         "--icon", str(ROOT / "icon.ico"),
         "--clean",
         "--noconfirm",
@@ -159,10 +159,10 @@ def build(skip_cleanup: bool = False) -> None:
     print(f"[BUILD] Total size: {total_mb:.0f} MB")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build PupilSwim standalone executable")
+    parser = argparse.ArgumentParser(description="Build Distortion Analyzer standalone executable")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
     parser.add_argument("--no-cleanup", action="store_true", help="Skip post-build cleanup")
-    args = parser.parse_args()
+    args, _unknown = parser.parse_known_args()
 
     if args.clean:
         clean()

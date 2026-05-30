@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['D:\\BaiduSyncdisk\\My Optics\\OpticsClaw\\distortion_gui_app.py'],
+    ['D:\\BaiduSyncdisk\\My Optics\\OpticsClaw\\DistortionAnalyzer\\distortion_gui_app.py'],
     pathex=[],
     binaries=[],
     datas=[('dist_real_pro.seq', '.'), ('dist_polar_pro.seq', '.')],
@@ -21,7 +21,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='Distortion Analyzer',
+    name='DistortionAnalyzer',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -32,7 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['D:\\BaiduSyncdisk\\My Optics\\OpticsClaw\\icon.ico'],
+    icon=['D:\\BaiduSyncdisk\\My Optics\\OpticsClaw\\DistortionAnalyzer\\icon.ico'],
 )
 coll = COLLECT(
     exe,
@@ -41,5 +41,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='Distortion Analyzer',
+    name='DistortionAnalyzer',
 )
