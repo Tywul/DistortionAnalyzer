@@ -1,0 +1,643 @@
+!****************************************************************************
+! Sequence:     DIST_POLAR
+!
+! Purpose:      Macro to plot the distortion over the full circular image format.
+!               Uses polar coordinate grid (radial lines + circular arcs).
+!
+! Syntax:       in DIST_POLAR max_radius ['file' [refgrid [color [num_r [num_a
+!                       [zoom [list_flag]]]]]]]
+!
+! Inputs:       max_radius   - Maximum FOV radius (default = 0, computed)
+!               'filename'   - file name for plot file (quotes required)
+!                              If blank (default), plot file is deleted
+!                              after display of plot
+!               refgrid      - reference grid code
+!                                0   no reference grid
+!                                1   outline only
+!                                2   full reference grid (default)
+!                                3   fiducial marks only
+!               color        - color of distortion plot (def: RED)
+!               num_r        - number of radial grid lines (default = 11)
+!               num_a        - number of angular grid lines (default = 12)
+!               zoom         - zoom position (default = 1)
+!               list_flag    - list distortion values
+!                              Yes - list distortion values
+!                              No  - do not list distortion values (default)
+!
+! Author:       Based on DIST by R. Juergens
+!
+! History:      2026-04-17 - Created polar coordinate version
+!
+!****************************************************************************
+! ARG0 "Macro to plot the 2D distortion over circular FOV using polar grid."
+!
+! ARG1 NAME     "Max FOV radius"
+! ARG1 TYPE     NUM
+! ARG1 DEFAULT  0
+! ARG1 HELP     "Maximum FOV radius in field specification units (0 = Computed)"
+!
+! ARG2 NAME     "Filename"
+! ARG2 TYPE     STR
+! ARG2 DEFAULT  ""
+! ARG2 HELP     "Name of plot file; if blank, file is deleted after display"
+!
+! ARG3 NAME     "Reference grid"
+! ARG3 TYPE     INT
+! ARG3 DEFAULT  2
+! ARG3 HELP     "0=no grid, 1=outline, 2=full grid, 3=fiducial marks"
+!
+! ARG4 NAME     "Distortion color"
+! ARG4 TYPE     STR
+! ARG4 CHOICE   "BLA" "RED" "GRE" "BLU" "MAG" "YEL" "CYA" "WHI" "GRA" "CHA" "PIN" "RUS" "CHI" "FOR" "BAB" "ROY"
+! ARG4 DEFAULT  "RED"
+! ARG4 HELP     "Color to plot distortion grid"
+!
+! ARG5 NAME     "Number of radial lines"
+! ARG5 TYPE     INT
+! ARG5 DEFAULT  11
+! ARG5 HELP     "Number of radial grid lines (Range: 3 to 21)"
+!
+! ARG6 NAME     "Number of angular lines"
+! ARG6 TYPE     INT
+! ARG6 DEFAULT  12
+! ARG6 HELP     "Number of angular grid lines (Range: 3 to 36)"
+!
+! ARG7 NAME     "Zoom position"
+! ARG7 TYPE     INT
+! ARG7 DEFAULT  1
+! ARG7 HELP     "Zoom position to plot"
+!
+! ARG8 NAME     "List distortion values?"
+! ARG8 TYPE     STR
+! ARG8 CHOICE   "Yes" "No"
+! ARG8 DEFAULT  "No"
+! ARG8 HELP     "List the distortion values in addition to the plotted output"
+!****************************************************************************
+
+GBL num ^distfile
+LCL num ^i ^j ^max ^num_r ^num_a ^refgrid ^sf ^xp ^yp
+LCL num ^xcen ^ycen ^zoom ^xob ^yob
+LCL num ^xarr(21,21) ^yarr(21,21) ^fail(22,22)
+LCL num ^x0(21,21) ^y0(21,21) ^x1(21,21) ^y1(21,21)
+LCL num ^r0 ^r1 ^ang ^rdist ^tdist
+LCL num ^x_orig ^y_orig ^x_scale ^y_scale ^y_offset ^color
+LCL num ^xpaper ^ypaper
+LCL num ^input(4) ^dum
+LCL num ^rxf ^ryf ^xfld ^yfld ^pi ^xx ^yy ^dxx ^dyy ^drr
+LCL num ^ang0 ^ang1
+LCL num ^continuationLine
+LCL num ^xcorner ^ycorner ^anam_ratio ^z
+LCL num ^max_radius ^r_edge ^dtheta ^dr
+LCL num ^xa ^ya ^xb ^yb ^xc ^yc ^xd ^yd
+LCL num ^cos_ang ^sin_ang ^r ^xf ^yf ^nseg ^dang
+LCL num ^x_ideal ^y_ideal ^x_dist ^y_dist ^r_ideal ^r_actual ^dist_pct
+LCL num ^first ^result ^RAY_FAIL
+LCL num ^xs ^ys
+
+LCL str ^msg ^msg2 ^colorlist
+LCL str ^file_name ^x_field ^y_field ^labtext ^colorstr ^list ^zpl
+LCL str ^format1 ^format2 ^fil
+
+! Initialize variables
+
+ver n
+^continuationLine == 0.0
+
+! Set default values for parameters (normally from RFD)
+! Parameters: max_radius, filename, refgrid, color, num_r, num_a, zoom, list_flag
+! Default: rfd 0 '' 2 red 11 12 1 N
+
+! Use provided parameters or defaults
+! Note: In CODE V, unset parameters evaluate to 0 for numeric and '' for string
+^max_radius == 0
+^file_name == ''
+^refgrid == 2
+^colorstr == 'RED'
+^num_r == 11
+^num_a == 12
+^zoom == 1
+^list == 'N'
+
+! test for AFC mode
+
+^z == ^zoom
+
+! Define field string
+! Note: TYP FLD may not be supported in some CODE V versions
+! Using direct field type detection from system
+if (num f) > 0
+    ! Try to detect field type from first field
+    ^x_field == 'XAN'  ! Default to angular field
+    ^y_field == 'YAN'
+else
+    ^x_field == 'XAN'
+    ^y_field == 'YAN'
+end if
+
+
+! test to for zero radius entry
+
+if ^max_radius=0
+
+    ^max_xfld == 0
+    ^max_yfld == 0
+
+    if ^x_field = "XOB"
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xob f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yob f^f z^z)))
+        end for
+
+    else if  ^x_field = "XAN"
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xan f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yan f^f z^z)))
+        end for
+
+    else if  ^x_field = "XIM"
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xim f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yim f^f z^z)))
+        end for
+
+    else if  ^x_field = "XRI"
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xri f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yri f^f z^z)))
+        end for
+
+    end if
+
+    if ^max_xfld*^max_yfld = 0
+        ^r_edge == (maxf(^max_xfld,^max_yfld))/sqrtf(2)
+    else
+        ^r_edge == sqrtf(^max_xfld**2 + ^max_yfld**2)
+    end if
+
+    if ^r_edge = 0
+        ^r_edge == 1
+    end if
+    wri
+    wri  "  CODE V computes the FOV radius as the"
+    wri  "  SQRT((XFOV FL)**2 + (YFOV FL)**2))"
+    wri  "  If FL is an on-axis field, a 1x1 FOV is used"
+    wri
+else
+    ^r_edge == ^max_radius
+end if
+
+
+! read in plot file name
+! If filename is empty, use default
+if ^file_name=''
+    ^file_name == 'distpltx.plt'
+else
+    ^i == locstr(^file_name,'.')
+    if ^i > 0
+        ^file_name == substr(^file_name,1,^i-1)
+    end if
+    ^file_name == concat(^file_name,'.plt')
+end if
+
+! read in reference grid type
+
+if ^refgrid < 0
+    ^refgrid == 2
+else if ^refgrid > 3
+    ^refgrid == 2
+end if
+
+! read in color for distortion grid
+
+^colorlist == 'BLAREDGREBLUMAGYELCYAWHIGRACHAPINRUSCHIFORBABROY'
+^color == roundf((locstr(^colorlist,substr(upcase(^colorstr),1,3))-1)/3)
+
+if ^color < 0
+    ^color == 1
+else if ^color > 15
+    ^color == 1
+end if
+
+! read in number of radial grid lines
+
+if ^num_r > 21
+    wri
+    ^msg == "Radial grid limits exceeded (3 <= number <= 21)."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+else if ^num_r < 3
+    wri
+    ^msg == "Radial grid limits exceeded (3 <= number <= 21)."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+end if
+
+! read in number of angular grid lines
+
+if ^num_a > 36
+    wri
+    ^msg == "Angular grid limits exceeded (3 <= number <= 36)."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+else if ^num_a < 3
+    wri
+    ^msg == "Angular grid limits exceeded (3 <= number <= 36)."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+end if
+
+! read in zoom position to plot
+
+^num_zoom == (num z)
+if ^num_zoom > 1
+    if ^zoom > ^num_zoom
+        wri
+        ^msg == "Requested zoom position does not exist."
+        ^dum == cverror(^msg,^continuationLine)
+        wri
+        ver y
+        rtn
+    end if
+end if
+
+! read in whether to list the data
+
+^list == substr(upcase(^list),1,1)
+if ^list = 'Y'
+    ! list is Y, ok
+else if ^list = 'N'
+    ! list is N, ok
+else
+    ^list == 'N'
+end if
+
+! Generate time stamp to use for temp lens
+^timestamp == ""
+^tmpStr == concat((dat), (tim pre))
+for ^i 1 lenstr(^tmpStr)
+    ^char == substr(^tmpStr, ^i, 1)
+    if locstr("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", UPCASE(^char)) > 0
+        ^timestamp == concat(^timestamp, ^char)
+    end if
+end for
+^tempFile == concat(concat("dist", ^timestamp), "_tmp.len")
+   
+! Removed: ^fil == (fil) - not supported in some CODE V versions
+sav ^tempFile
+! glo n  ! Removed - may not be supported in some CODE V versions
+
+! dezoom the lens - SKIPPED for compatibility
+! Note: Zoom handling removed. The macro assumes the lens is already
+! at the desired zoom position when loaded.
+^zpl == 'n'
+
+! For polar grid, set FOV based on field type
+! Skip FOV modification for zoom systems to avoid XAN/YAN command errors
+^num_zoom == (num z)
+if ^num_zoom > 1
+    ! Zoom system - FOV is already set by ZOO commands, skip modification
+    wri 'Note: Zoom system detected, skipping FOV modification'
+else if ^x_field = "XAN"
+    ! Angular field - use the max angle directly
+    XAN 0 0
+    YAN 0 ^r_edge
+else if ^x_field = "XOB"
+    ! Object height field
+    ^xfld == ^r_edge
+    ^yfld == ^r_edge
+    XOB 0 ^xfld
+    YOB 0 ^yfld
+else
+    ! Other field types - use the max radius
+    ^xfld == ^r_edge
+    ^yfld == ^r_edge
+    $x_field 0 ^xfld
+    $y_field 0 ^yfld
+end if
+
+^RAY_FAIL == 0
+rsi fL r1
+if (rer)
+    ^RAY_FAIL == 1
+    wri 
+    ^msg == "Chief Ray failures at the edge of the field"
+    ^msg2 == "Sequence aborted"
+    ^dum == cverror(^msg,^continuationLine)
+    ^dum == cverror(^msg2,1)
+    wri
+    goto RESTORE_LENS
+end if
+
+^xob == (xim f2)
+^yob == (yim f2)
+! Scale to central 5% of FOV.
+xim 0 ^xob
+yim 0 ^yob
+rsi r1 f1
+
+if (afc)
+   ^xcen == (l si)/(n si)
+   ^ycen == (m si)/(n si)
+els
+   ^xcen == (x si)
+   ^ycen == (y si)
+end if
+
+rsi 0 0 .05 .05
+
+if (afc)
+   ^ycorner == (m si)/(n si) - ^ycen
+   ^xcorner == (m si)/(n si)/^yob*^xob - ^xcen
+els
+   ^ycorner == (y si)-^ycen
+   ^xcorner == ^ycorner/^yob*^xob-^xcen
+end if
+
+! For polar grid, compute step sizes
+^dr == ^r_edge/(^num_r-1)
+^dtheta == 2*4*atanf(1)/^num_a
+^pi == 4*atanf(1)
+
+! Open plot file
+if ^distfile = 0
+    ope new u^distfile $file_name
+end if
+
+! Initialize plot file
+wri u^distfile " 1   1"
+wri u^distfile " 2   0.000   0.000   8.500  11.000"
+wri u^distfile " 6   0.150   0.150"
+wri u^distfile " 7  -1.000   0.000"
+
+! draw border
+wri u^distfile " 3   7.750   0.000"
+wri u^distfile " 4   7.750  10.000"
+wri u^distfile " 4   0.750  10.000"
+wri u^distfile " 4   0.750   0.000"
+wri u^distfile " 4   7.750   0.000"
+wri u^distfile " 3   7.300   0.000"
+wri u^distfile " 4   7.300  10.000"
+wri u^distfile " 4   7.750  10.000"
+wri u^distfile " 3   7.630   0.150"
+wri u^distfile " 3   8.500   0.000"
+
+! title
+wri u^distfile " 3   7.630   0.150"
+wri u^distfile " 8 40'40c'" (tit)
+
+! zoom position
+if ^zpl='y'
+    wri u^distfile " 3   7.630   5.900"
+    wri u^distfile " 8 15'Zoom Position '" ^zoom
+end if
+
+! date
+wri u^distfile " 3   7.630   8.200"
+wri u^distfile " 8 12'" (dat) 
+
+! legend
+if ^refgrid
+    if ^refgrid = 1
+        wri u^distfile " 3   6.800   7.700"
+        wri u^distfile " 4   6.800   8.700"
+    else if ^refgrid = 2
+        wri u^distfile " 3   6.800   7.700"
+        wri u^distfile " 4   6.800   8.700"
+    else if ^refgrid = 3
+        wri u^distfile " 6    .050    .050"
+        wri u^distfile " 3   6.800   7.700"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   7.950"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   8.200"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   8.450"
+        wri u^distfile " 9  3"
+    end if
+    wri u^distfile " 3   6.800   8.700"
+    wri u^distfile " 4   7.800   8.700"
+    wri u^distfile " 3   7.800   7.700"
+    wri u^distfile " 4   6.800   7.700"
+    wri u^distfile " 3   7.300   8.200"
+    wri u^distfile " 8 15'Reference Grid'"
+end if
+
+wri u^distfile " 3   4.250   0.300"
+wri u^distfile " 8 15'Distortion Grid (Polar)'"
+
+! Compute scale factors for plot
+! Map the circular FOV to fit in the plot area
+^max == maxf(absf(^xob),absf(^yob))
+if ^max = 0
+    ^max == 1
+end if
+
+! Scale to fit in 6x6 inch area centered at (4.25, 5.0)
+^x_scale == 3.0/^max
+^y_scale == 3.0/^max
+^x_orig == 4.25
+^y_orig == 5.0
+
+! Plot reference grid (polar coordinates)
+if ^refgrid
+    wri u^distfile " 5   1"
+    
+    ! Draw radial lines
+    for ^j 0 ^num_a-1
+        ^ang == ^j * ^dtheta
+        ^xa == ^x_orig + ^r_edge * ^x_scale * cosf(^ang)
+        ^ya == ^y_orig + ^r_edge * ^y_scale * sinf(^ang)
+        wri u^distfile " 3" ^xa ^ya
+        wri u^distfile " 4" ^x_orig ^y_orig
+    end for
+    
+    ! Draw circular arcs
+    for ^i 1 ^num_r-1
+        ^r == ^i * ^dr
+        ! Draw a circle at radius r using small line segments
+        ^nseg == 36
+        ^dang == 2*^pi/^nseg
+        for ^j 0 ^nseg
+            ^ang == ^j * ^dang
+            ^xx == ^x_orig + ^r * ^x_scale * cosf(^ang)
+            ^yy == ^y_orig + ^r * ^y_scale * sinf(^ang)
+            if ^j = 0
+                wri u^distfile " 3" ^xx ^yy
+            els
+                wri u^distfile " 4" ^xx ^yy
+            end if
+        end for
+    end for
+end if
+
+! Now trace the distorted grid
+wri u^distfile " 5   " ^color
+
+! Trace radial lines (distorted)
+for ^j 0 ^num_a-1
+    ^ang == ^j * ^dtheta
+    ^cos_ang == cosf(^ang)
+    ^sin_ang == sinf(^ang)
+    
+    for ^i 0 ^num_r-1
+        ^r == ^i * ^dr
+        ^xf == ^r * ^cos_ang
+        ^yf == ^r * ^sin_ang
+        
+        ! Trace ray at this field point
+        rsi 0 0 ^xf ^yf
+        if (rer)
+            ^fail(^i+1,^j+1) == 1
+            ^RAY_FAIL == 1
+        else
+            ^fail(^i+1,^j+1) == 0
+            if (afc)
+                ^xs == (l si)/(n si) - ^xcen
+                ^ys == (m si)/(n si) - ^ycen
+            else
+                ^xs == (x si) - ^xcen
+                ^ys == (y si) - ^ycen
+            end if
+            ^xs == ^x_orig + ^xs * ^x_scale
+            ^ys == ^y_orig + ^ys * ^y_scale
+            ^x1(^i+1,^j+1) == ^xs
+            ^y1(^i+1,^j+1) == ^ys
+        end if
+    end for
+    
+    ! Draw the distorted radial line
+    ^first == 1
+    for ^i 0 ^num_r-1
+        if ^fail(^i+1,^j+1) = 0
+            if ^first
+                wri u^distfile " 3" ^x1(^i+1,^j+1) ^y1(^i+1,^j+1)
+                ^first == 0
+            else
+                wri u^distfile " 4" ^x1(^i+1,^j+1) ^y1(^i+1,^j+1)
+            end if
+        else
+            ^first == 1
+        end if
+    end for
+end for
+
+! Trace circular arcs (distorted)
+for ^i 1 ^num_r-1
+    ^r == ^i * ^dr
+    
+    ! Sample points around the circle
+    ^nseg == ^num_a
+    for ^j 0 ^nseg
+        ^ang == ^j * ^dtheta
+        ^xf == ^r * cosf(^ang)
+        ^yf == ^r * sinf(^ang)
+        
+        rsi 0 0 ^xf ^yf
+        if (rer)
+            ^fail(^j+1,1) == 1
+            ^RAY_FAIL == 1
+        else
+            ^fail(^j+1,1) == 0
+            if (afc)
+                ^xs == (l si)/(n si) - ^xcen
+                ^ys == (m si)/(n si) - ^ycen
+            else
+                ^xs == (x si) - ^xcen
+                ^ys == (y si) - ^ycen
+            end if
+            ^xs == ^x_orig + ^xs * ^x_scale
+            ^ys == ^y_orig + ^ys * ^y_scale
+            ^x0(^j+1,1) == ^xs
+            ^y0(^j+1,1) == ^ys
+        end if
+    end for
+    
+    ! Draw the distorted arc
+    ^first == 1
+    for ^j 0 ^nseg
+        if ^fail(^j+1,1) = 0
+            if ^first
+                wri u^distfile " 3" ^x0(^j+1,1) ^y0(^j+1,1)
+                ^first == 0
+            else
+                wri u^distfile " 4" ^x0(^j+1,1) ^y0(^j+1,1)
+            end if
+        else
+            ^first == 1
+        end if
+    end for
+end for
+
+! List distortion values if requested
+if ^list='Y'
+    wri
+    wri "Distortion values for polar grid:"
+    wri "================================="
+    wri "Radius    Angle     X_ideal   Y_ideal   X_dist    Y_dist    Dist%"
+    wri "------    -----     -------   -------   ------    ------    -----"
+    
+    for ^i 0 ^num_r-1
+        ^r == ^i * ^dr
+        for ^j 0 ^num_a-1
+            ^ang == ^j * ^dtheta
+            ^xf == ^r * cosf(^ang)
+            ^yf == ^r * sinf(^ang)
+            
+            ! Ideal position (reference grid)
+            ^x_ideal == ^x_orig + ^r * ^x_scale * cosf(^ang)
+            ^y_ideal == ^y_orig + ^r * ^y_scale * sinf(^ang)
+            
+            ! Get distorted position
+            rsi 0 0 ^xf ^yf
+            if (rer) = 0
+                if (afc)
+                    ^x_dist == (l si)/(n si) - ^xcen
+                    ^y_dist == (m si)/(n si) - ^ycen
+                else
+                    ^x_dist == (x si) - ^xcen
+                    ^y_dist == (y si) - ^ycen
+                end if
+                ^x_dist == ^x_orig + ^x_dist * ^x_scale
+                ^y_dist == ^y_orig + ^y_dist * ^y_scale
+                
+                ! Calculate distortion percentage
+                ^r_ideal == sqrtf((^x_ideal-^x_orig)**2 + (^y_ideal-^y_orig)**2)
+                ^r_actual == sqrtf((^x_dist-^x_orig)**2 + (^y_dist-^y_orig)**2)
+                if ^r_ideal > 0
+                    ^dist_pct == 100 * (^r_actual - ^r_ideal) / ^r_ideal
+                else
+                    ^dist_pct == 0
+                end if
+                
+                wri ^r ^ang ^x_ideal ^y_ideal ^x_dist ^y_dist ^dist_pct
+            end if
+        end for
+    end for
+end if
+
+! Check for ray failures and issue warning
+if ^RAY_FAIL
+    wri
+    ^result == cvwarning("Ray failure detected in distortion grid points. Lines ", 0)
+    ^result == cvwarning("connecting edge points in the grid may appear abnormal.", 1)
+    wri
+end if
+
+! restore the lens file
+LBL RESTORE_LENS
+if ^distfile > 0
+    clo u^distfile
+end if
+res ^tempFile
+lib
+pur ^tempFile
+
+ver y

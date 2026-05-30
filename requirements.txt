@@ -1,0 +1,17 @@
+# Distortion Analyzer - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+numpy>=1.20
+matplotlib>=3.5
+
+# GUI
+PyQt5>=5.15
+
+# Windows COM support (Windows only)
+pywin32>=300
+
+# Development / testing (optional)
+# pytest>=7.0
+# black>=23.0
+# mypy>=1.0

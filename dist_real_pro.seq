@@ -1,0 +1,1005 @@
+!****************************************************************************
+! Sequence:     DIST
+!
+! Purpose:      Macro to plot the distortion over the full image format.
+!               The user inputs the semi-FOV dimensions in X and Y and
+!               the filename for the plot (with or without the .PLT).
+!
+! Syntax:       in DIST x_semi_fov [y_semi_fov ['file' [refgrid [color [num
+!                       [zoom [list_flag]]]]]]]
+!
+! Inputs:       x_fov        - FOV semi-dimension in X (default = 0, computed)
+!               y_fov        - FOV semi-dimension in Y (default = 0 = x_fov)
+!               'filename'   - file name for plot file (quotes required)
+!                              If blank (default), plot file is deleted
+!                              after display of plot
+!               refgrid      - reference grid code
+!                                0   no reference grid
+!                                1   outline only
+!                                2   full reference grid (default)
+!                                3   fiducial marks only
+!               color        - color of distortion plot (def: RED)
+!               num          - number of grid lines (max = 21) (default = 11)
+!               zoom         - zoom position (default = 1)
+!               list_flag    - list distortion values
+!                              Yes - list distortion values
+!                              No  - do not list distortion values (default)
+!
+! Author:       R. Juergens     Date: 02-01-90
+!
+! History:      02-01-90 RJ     New for 7.24
+!               06-25-90 RJ     Modified for 7.30 (allow setting num value
+!                               and add vignetting capability)
+!               04-15-91 RJ     Modified for 7.40 (add RFD)
+!               08-21-91 RJ     Modified for 7.41 (rewritten for speed)
+!               11-13-92 RJ     Make file name optional
+!               01-14-93 RJ     Make y_fov optional and add check on file 
+!                               name length for DOS
+!               08-04-94 RJ     Add dialog box prompts
+!                               Add input to plot the distortion in color
+!               09-15-94 DR     Fixed VER usage
+!               11-30-94 RJ     Changed to use RAYRSI function
+!               01-21-97 RJ     Minor changes (no effect on output)
+!               04-21-97 RJ     Add listed output
+!                               Change plotted output
+!                               Change to work correctly for YRI,XRI
+!               11-21-97 RJ     Change filename syntax for NT
+!                               Change variable name for unit number
+!                               Delete test for filename length
+!               04-14-98 RJ     Change Yes|No input to literal
+!               05-08-03 JI     Change reference grid computation from
+!                               paraxial to real ray sampling in central
+!                               5% of FOV.
+!               05-08-03 JI     Add note if anamorphism > 0.1% is present.
+!                               Anamorphism will distort both ref. & real grids.
+!               05-08-03 JI     Streamlined color selection logic.
+!               01-05-04 DH     Test AFC and issue warning if "Yes"
+!                               Modify to use RFN
+!               10-01-04 DH     Added explicit variable declarations
+!                               Modify default behavior to compute FOV
+!               11-19-04 MKC    Updated RFD values to compute FOV
+!               01-17-08 WS     Added distortion computation for AFC
+!               09-09-08 DH     Added a hard return to avoid stange syntax parsing
+!                               ORAma41119
+!               02-28-10 WS     Resolve bug #57614 (modifed default FOV computation)
+!               01-22-13 JW     Added a UCH chart instead of manual PLT file for chart
+!                               Added time stamp to temp file name to avoid overwrite with concurrent sessions
+!                               Added warning when ray failures occur.
+!               02-05-14 WS     Added an error message when chief ray failures at the edge of the field. 
+!                               The macro restores lens file before it aborts
+!
+!****************************************************************************
+! ARG0 "Macro to plot the 2D distortion over the specified FOV."
+!
+! ARG1 NAME     "X FOV semi-field"
+! ARG1 TYPE     NUM
+! ARG1 DEFAULT  0
+! ARG1 HELP     "Semi-dimension of X-FOV in field specification units (0 = Computed)"
+!
+! ARG2 NAME     "Y FOV semi-field"
+! ARG2 TYPE     NUM
+! ARG2 DEFAULT  0
+! ARG2 HELP     "Semi-dimension of Y-FOV in field specification units (0 = X FOV)"
+!
+! ARG3 NAME     "Display panel semi-width"
+! ARG3 TYPE     NUM
+! ARG3 DEFAULT  0
+! ARG3 HELP     "Semi-width of display panel"
+!
+! ARG4 NAME     "Display panel semi height"
+! ARG4 TYPE     NUM
+! ARG4 DEFAULT  0
+! ARG4 HELP     "Semi-height of display panel"
+!
+! ARG5 NAME     "Filename"
+! ARG5 TYPE     STR
+! ARG5 DEFAULT  ""
+! ARG5 HELP     "Name of plot file; if blank, file is deleted after display"
+!
+! ARG6 NAME     "Distortion color"
+! ARG6 TYPE     STR
+! ARG6 CHOICE   "BLA" "RED" "GRE" "BLU" "MAG" "YEL" "CYA" "WHI" "GRA" "CHA" "PIN" "RUS" "CHI" "FOR" "BAB" "ROY"
+! ARG6 DEFAULT  "RED"
+! ARG6 HELP     "Color to plot distortion grid"
+!
+! ARG7 NAME     "Number of grid lines"
+! ARG7 TYPE     INT
+! ARG7 DEFAULT  11
+! ARG7 HELP     "Number of grid lines plotted (Range: 3 to 21)"
+!
+! ARG8 NAME     "Zoom position"
+! ARG8 TYPE     INT
+! ARG8 DEFAULT  1
+! ARG8 HELP     "Zoom position to plot"
+!
+! ARG9 NAME     "List distortion values?"
+! ARG9 TYPE     STR
+! ARG9 CHOICE   "Yes" "No"
+! ARG9 DEFAULT  "No"
+! ARG9 HELP     "List the distortion values in addition to the plotted output"
+!****************************************************************************
+
+rfd 0 0 '' 2 red 11 1 N
+
+GBL num ^distfile
+LCL num ^delx ^dely ^i ^j ^max ^num ^refgrid ^sf ^xp ^yp
+LCL num ^xcen ^ycen ^zoom ^xob ^yob
+LCL num ^x(21,21) ^y(21,21) ^fail(22,22)
+LCL num ^x0(21,21) ^y0(21,21) ^x1(21,21) ^y1(21,21)
+LCL num ^r0 ^r1 ^ang ^rdist ^tdist
+LCL num ^x_orig ^y_orig ^x_scale ^y_scale ^y_offset ^color
+LCL num ^xpaper ^ypaper
+LCL num ^input(4) ^dum
+LCL num ^rxf ^ryf ^xfld ^yfld ^pi ^xx ^yy ^dxx ^dyy ^drr ^rdist ^tdist
+LCL num ^ang0 ^ang1 ^pi
+LCL num ^continuationLine
+LCL num ^xcorner ^ycorner ^anam_ratio ^color ^z
+
+LCL str ^msg ^msg2 ^colorlist
+LCL str ^file_name ^x_field ^y_field ^labtext ^colorstr ^list ^zpl
+LCL str ^format1 ^format2 ^fil
+
+! Initialize variables, dezoom, and change specification data
+
+ver n
+^continuationLine == 0.0
+
+! test for AFC mode
+
+^z == #8
+
+! Define field string
+^x_field == concat('X',(TYP FLD))  ! build command string to change
+^y_field == concat('Y',(TYP FLD))  !   field - XANG, etc.
+^x_field == upcase(substr(^x_field,1,3))   ! Used for test
+
+
+! test to for zero X field of view entry
+
+if #1=0
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Added by WS to resolve bug # = 37614
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    ^max_xfld == 0
+    ^max_yfld == 0
+
+    if ^x_field = "XOB"
+        ! ^xfld == sqrtf((xob fl z^z)**2 + (yob fl z^z)**2)
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xob f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yob f^f z^z)))
+        end for
+
+    else if  ^x_field = "XAN"
+    !      ^xfld == sqrtf((xan fl z^z)**2 + (yan fl z^z)**2)
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xan f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yan f^f z^z)))
+        end for
+
+    else if  ^x_field = "XIM"
+    !      ^xfld == sqrtf((xim fl z^z)**2 + (yim fl z^z)**2)
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xim f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yim f^f z^z)))
+        end for
+
+    else if  ^x_field = "XRI"
+    !      ^xfld == sqrtf((xri fl z^z)**2 + (yri fl z^z)**2)
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        For ^f 1 (num f)
+            ^max_xfld == maxf(^max_xfld,absf((xri f^f z^z)))
+            ^max_yfld == maxf(^max_yfld,absf((yri f^f z^z)))
+        end for
+
+    end if
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    if ^max_xfld*^max_yfld = 0
+        ^xfld == (maxf(^max_xfld,^max_yfld))/sqrtf(2)
+    else
+        ^xfld == ^max_xfld
+    end if
+
+    if ^xfld = 0
+        ^xfld == 1
+    end if
+    wri
+    wri  "  CODE V computes the X & Y FOV as the"
+    !   wri  "  SQRT((XFOV FL)**2 + (YFOV FL)**2))"
+
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ! Added by WS to resolve bug # = 37614
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    wri  "  (Maximum Y field size)/sqrt(2), when there is no X field defined or"
+    wri  "  (Maximum X field size)/sqrt(2), when there is no Y field defined."
+    !   wri  "  where XFOV and YFOV are in the field specification units"
+    wri  "  If FL is an on-axis field, a 1x1 FOV is used"
+    wri
+else
+    ^xfld == #1
+end if
+
+
+! read in plot file name
+
+^file_name == #5
+^file_name == trunc(^file_name)
+if ^file_name=''
+    ^file_name == 'distpltx'
+end if
+^i == locstr(^file_name,'.')
+if ^i<>0
+    ^file_name == substr(^file_name,1,^i-1)
+end if
+^file_name == concat(^file_name,'.plt')
+
+! read in reference grid type
+
+^refgrid == #7               ! 0 = no grid, 1 = outline only,
+if ^refgrid<0 or ^refgrid>3  ! 2 = full grid, 3 = fiducial marks
+    ^refgrid == 2
+end if
+
+! read in color for distortion grid
+
+^colorstr == rfstr(5)
+^colorstr == substr(upcase(^colorstr),1,3)
+^colorlist == 'BLAREDGREBLUMAGYELCYAWHIGRACHAPINRUSCHIFORBABROY'
+^color == roundf((locstr(^colorlist,^colorstr)-1)/3)
+
+! read in number of grid lines
+
+^num == #7
+if ^num>21 or ^num<3
+    wri
+    ^msg == "Grid limits exceeded (3 <= number <= 21)."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+end if
+
+! read in zoom position to plot
+
+if (num z)>1 and #8>(num z)
+    wri
+    ^msg == "Requested zoom position does not exist."
+    ^dum == cverror(^msg,^continuationLine)
+    wri
+    ver y
+    rtn
+end if
+
+! read in whether to list the data
+
+^list == rfstr(9)
+if ^list=''
+    ^list == 'N'
+end if
+^list == substr(upcase(^list),1,1)
+
+! Generate time stamp to use for temp lens
+^timestamp == ""
+^tmpStr == concat((dat), (tim pre))
+for ^i 1 lenstr(^tmpStr)
+    ^char == substr(^tmpStr, ^i, 1)
+    if locstr("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ", UPCASE(^char)) > 0; 
+        ^timestamp == concat(^timestamp, ^char); 
+    end if
+end for
+^tempFile == concat(concat("dist", ^timestamp), "_tmp.len")
+   
+^fil == (fil)
+out no
+sav ^tempFile
+glo n
+
+! dezoom the lens
+
+^zpl == 'n'
+if (num z)>1
+    ^zpl == 'y'
+    dez #8
+end if
+
+! change the field specification to object heights
+
+if #2=0
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+! Added by WS to resolve bug # = 37614
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   if ^max_xfld*^max_yfld = 0   
+    ^yfld == ^xfld
+   els
+   ^yfld == ^max_yfld
+   end if
+       
+else
+    ^yfld == #2
+end if
+
+$x_field 0 ^xfld
+$y_field 0 ^yfld
+
+^RAY_FAIL == 0
+^EDGE_RAY_FAIL == 0
+rsi fL r1
+if (rer)
+    ! Modified: Do not set ^RAY_FAIL to 1, so chart generation still runs
+    ! Only set ^EDGE_RAY_FAIL for paraxial approximation in center coord calculation
+    ^EDGE_RAY_FAIL == 1
+    ! Modified: Do not abort, continue with paraxial coordinates
+    out y
+    wri
+    ^result == cvwarning("Chief ray failure at edge field detected. Using paraxial approximation.", 0)
+    ^result == cvwarning("Distortion grid will use ideal image heights for failed rays.", 1)
+    wri
+    out n
+    ! Set default center coordinates for paraxial approximation
+    ^xcen == 0
+    ^ycen == 0
+end if
+
+! out Y
+! wri ($x_field f2)
+! out n
+^xob == (xim f2)
+^yob == (yim f2)
+! Begin JFI alteration to get true central image scale (not paraxial)
+! Scale to central 5% of FOV.
+xim 0 ^xob
+yim 0 ^yob
+
+! If edge ray failed, use paraxial approximation for center coordinates
+if ^EDGE_RAY_FAIL = 1
+    ^xcen == 0
+    ^ycen == 0
+    ^ycorner == ^yob * 0.05
+    ^xcorner == ^xob * 0.05
+els
+    rsi r1 f1
+    
+    if (afc)
+       ^xcen == (l si)/(n si)
+       ^ycen == (m si)/(n si)
+    els
+       ^xcen == (x si)
+       ^ycen == (y si)
+    end if
+    
+    rsi 0 0 .05 .05
+    
+    if (afc)
+       ^ycorner == (m si)/(n si) - ^ycen
+       ^xcorner == (m si)/(n si)/^yob*^xob - ^xcen
+    els
+       ^ycorner == (y si)-^ycen
+       ^xcorner == ^ycorner/^yob*^xob-^xcen
+    end if
+end if
+
+if #3 = 0
+    if #4 = 0
+        ^delx == 40*^xcorner/(^num-1)
+        ^dely == 40*^ycorner/(^num-1)
+    else
+        ^dely == #4/(^num-1)*2
+        ^delx == ^dely
+    end if
+else
+    if #4 = 0
+        ^delx == #3/(^num-1)*2
+        ^dely == ^delx
+    else
+        ^delx == #3/(^num-1)*2
+        ^dely == #4/(^num-1)*2
+    end if
+end if
+! out Y
+! wri ^xcen ^ycen
+! wri ^xcorner ^ycorner
+! wri ^delx ^dely
+! out n
+! This calculation may remove anamorphism (TBD).
+! End JFI alteration
+
+! Initialize plot file
+
+if ^distfile<>0
+    clo u^distfile
+end if
+ope new u^distfile $file_name
+
+! initialization
+wri u^distfile " 1     8.5    90.0" ! initialize plot size and orientation
+wri u^distfile " 5  0"              ! set default color
+wri u^distfile " 6   0.150   0.150" ! .15 character size
+wri u^distfile " 7  -1.000   0.000" ! character up vector
+
+! draw border
+wri u^distfile " 3   7.750   0.000"
+wri u^distfile " 4   7.750  10.000"
+wri u^distfile " 4   0.750  10.000"
+wri u^distfile " 4   0.750   0.000"
+wri u^distfile " 4   7.750   0.000"
+wri u^distfile " 3   7.300   0.000"
+wri u^distfile " 4   7.300  10.000"
+wri u^distfile " 4   7.750  10.000"
+wri u^distfile " 3   7.630   0.150"
+wri u^distfile " 3   8.500   0.000"
+
+! title
+wri u^distfile " 3   7.630   0.150"
+wri u^distfile q" 8 40'40c'" (tit)
+
+! zoom position
+if ^zpl='y'
+    wri u^distfile " 3   7.630   5.900"
+    wri u^distfile q" 8 15Zoom Position 'd'" #8
+end if
+
+! date
+wri u^distfile " 3   7.630   8.200"
+wri u^distfile q" 8 12 '11c'" (dat) 
+
+! legend
+if ^refgrid
+    if ^refgrid=1 or ^refgrid=2
+        wri u^distfile " 3   6.800   7.700"
+        wri u^distfile " 4   6.800   8.700"
+    else if ^refgrid=3
+        wri u^distfile " 6    .050    .050"
+        wri u^distfile " 3   6.800   7.700"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   7.950"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   8.200"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   8.450"
+        wri u^distfile " 9  3"
+        wri u^distfile " 3   6.800   8.700"
+        wri u^distfile " 9  3"
+    end if
+    wri u^distfile " 3   6.850   8.800"
+    wri u^distfile " 6   0.100   0.100"
+    wri u^distfile " 8  9Parax FOV"   
+end if
+wri u^distfile q" 5  'd'" ^color
+wri u^distfile " 3   7.100   7.700"
+wri u^distfile " 4   7.100   8.700"
+wri u^distfile " 3   7.150   8.800"
+wri u^distfile " 6   0.100   0.100"
+wri u^distfile " 8 10Actual FOV"   
+wri u^distfile " 5  0"
+
+! set plot scale
+
+^max == 20*maxf(absf(^xcorner),absf(^ycorner))  ! JFI altered for true central scale
+
+! Ensure max is not zero to avoid division by zero
+if ^max = 0
+    ^max == 1
+end if
+
+^sf == .5                       ! plot scale factor
+^max == ^max/^sf
+^x_orig == -^max
+^y_orig == -^max*7/9
+^x_scale == 9/(2*^max)
+^y_scale == 9/(2*^max)
+^y_orig == ^y_orig-.75/^y_scale   ! make room for labels
+^x_orig == ^x_orig-.5/^x_scale
+^y_offset == 8
+
+! Store the rectilinear (paraxial reference) grid
+
+^yp == (^num-1)/2*^dely
+for ^i 1 ^num
+    ^xp == -(^num+1)/2*^delx
+    for ^j 1 ^num
+        ^xp == ^xp + ^delx
+        ^x0(^i,^j) == ^xp
+        ^y0(^i,^j) == ^yp
+    end for
+    ^yp == ^yp - ^dely
+end for
+
+! Draw the rectlinear (paraxial reference) grid
+
+if ^refgrid = 3                ! draw fiducial marks only
+
+    wri u^distfile " 6    .050    .050"
+    ^yp == (^num-1)/2*^dely
+    for ^j 1 ^num
+        ^xp == -(^num+1)/2*^delx
+        for ^i 1 ^num
+            ^xp == ^xp + ^delx
+            ^ypaper == (^xp-^x_orig)*^x_scale
+            ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+            wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+            wri u^distfile " 9  3"    ! draw a + sign
+        end for
+        ^yp == ^yp - ^dely
+    end for
+
+else if ^refgrid = 2           ! then draw full grid lines
+
+    ^yp == (^num-1)/2*^dely       ! vertical reference grid lines
+    ^xp == -(^num+1)/2*^delx
+    for ^i 1 ^num
+        ^xp == ^xp + ^delx
+        ^ypaper == (^xp-^x_orig)*^x_scale
+        ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+        wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        ^xpaper == ^y_offset-(-^yp-^y_orig)*^y_scale
+        wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    end for
+
+    ^xp == (^num-1)/2*^delx       ! horizontal reference grid lines
+    ^yp == -(^num+1)/2*^dely
+    for ^i 1 ^num
+        ^yp == ^yp + ^dely
+        ^ypaper == (^xp-^x_orig)*^x_scale
+        ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+        wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        ^ypaper == (-^xp-^x_orig)*^x_scale
+        wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    end for
+
+else if ^refgrid = 1           ! draw outline of reference grid
+
+    ^xp == (^num-1)/2*^delx
+    ^yp == (^num-1)/2*^dely
+    ^ypaper == (^xp-^x_orig)*^x_scale
+    ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+    wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    ^xpaper == ^y_offset-(-^yp-^y_orig)*^y_scale
+    wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    ^ypaper == (-^xp-^x_orig)*^x_scale
+    wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+    wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+    ^ypaper == (^xp-^x_orig)*^x_scale
+    wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+
+else   ! do not draw any reference grid
+
+end if
+
+! Ray trace grid points and put into data arrays
+
+!rsi 0 0 0 0
+!^xcen == (x si)               ! find center of pattern
+!^ycen == (y si)
+^input(1) == 0
+^input(2) == 0
+^RayFailMsg == 0
+! ^input(3) == 1
+! ^input(4) == 1
+! ^dum == rayrsi(1,(ref),0,0,^input)
+! wri x
+for ^j 1 ^num
+    ^input(3) == -1+2*(^j-1)/(^num-1)     
+    for ^i 1 ^num
+        ^input(4) == 1-2*(^i-1)/(^num-1)
+        ^dum == rayrsi(1,(ref),0,0,^input)
+        if (RER) <> 0               ! check for chief ray failure
+            ! Modified: Return paraxial (ideal) image height coordinates on ray failure
+            if (afc)
+               ^x(^i,^j) == ^x0(^i,^j) + ^xcen
+               ^y(^i,^j) == ^y0(^i,^j) + ^ycen
+               ^x1(^i,^j) == ^x0(^i,^j)
+               ^y1(^i,^j) == ^y0(^i,^j)
+            els
+               ^x(^i,^j) == ^x0(^i,^j) + ^xcen
+               ^y(^i,^j) == ^y0(^i,^j) + ^ycen
+               ^x1(^i,^j) == ^x0(^i,^j)
+               ^y1(^i,^j) == ^y0(^i,^j)
+            end if
+            ^fail(^i,^j) == 0           ! Mark as valid since we have paraxial coordinates
+            if ^RayFailMsg < 1
+                out y
+                wri
+                ^result == cvwarning("Ray failure detected in distortion grid points. Using paraxial coordinates.", 0)
+                ^result == cvwarning("Lines connecting edge points in the grid may appear abnormal.", 1)
+                wri
+                out n
+            end if
+            ^RayFailMsg == ^RayFailMsg + 1
+        else
+            if (afc)
+               ^x(^i,^j) == (l si)/(n si)
+               ^y(^i,^j) == (m si)/(n si)
+               ^fail(^i,^j) == 0
+               ^x1(^i,^j) == (l si)/(n si) - ^xcen
+               ^y1(^i,^j) == (m si)/(n si) - ^ycen
+            els
+                   ^x(^i,^j) == (x si)     ! save chief ray data in arrays
+                   ^y(^i,^j) == (y si)
+                   ^fail(^i,^j) == 0
+                   ^x1(^i,^j) == (x si)-^xcen
+                   ^y1(^i,^j) == (y si)-^ycen
+            end if
+        end if
+    end for
+end for
+! out y
+! wri ^ycen ^y1(^num,^num)
+! wri x
+! out n
+! Plot ray trace points stored in arrays ^x and ^y
+
+wri u^distfile q" 5  'd'" ^color  ! change color for overlay
+
+for ^j 1 ^num                   ! 1/22/13 JW  These are the Vertical lines
+    ^i == 1
+    while ^fail(^i,^j) and ^i<^num
+        ^i == ^i+1
+    end while
+    if (^i<^num) and (not ^fail(^i+1,^j))
+        ^xp == ^x(^i,^j)-^xcen
+        ^yp == ^y(^i,^j)-^ycen
+        ^ypaper == (^xp-^x_orig)*^x_scale
+        ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+        wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        while (not ^fail(^i+1,^j)) and (^i<^num)
+            ^i == ^i+1
+            ^xp == ^x(^i,^j)-^xcen
+            ^yp == ^y(^i,^j)-^ycen
+            ^ypaper == (^xp-^x_orig)*^x_scale
+            ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+            wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        end while
+    end if
+end for
+
+for ^i 1 ^num                   ! 1/22/13 JW  These are the Horizontal lines
+    ^j == 1
+    while ^fail(^i,^j) and ^j<^num
+        ^j == ^j+1
+    end while
+    if (^j<^num) and (not ^fail(^i,^j+1))
+        ^xp == ^x(^i,^j)-^xcen
+        ^yp == ^y(^i,^j)-^ycen
+        ^ypaper == (^xp-^x_orig)*^x_scale
+        ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+        wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        while (not ^fail(^i,^j+1)) and (^j<^num)
+            ^j == ^j+1
+            ^xp == ^x(^i,^j)-^xcen
+            ^yp == ^y(^i,^j)-^ycen
+            ^ypaper == (^xp-^x_orig)*^x_scale
+            ^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+            wri u^distfile q" 4 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+        end while
+    end if
+end for
+
+! Put in labels
+
+wri u^distfile " 5  0"                ! change color back for labels
+wri u^distfile " 6    .150    .150"   ! label size
+
+^xp == -.35*^max*^sf
+^yp == -1.4*^max*^sf
+^ypaper == (^xp-^x_orig)*^x_scale
+^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+^labtext == 'HORIZONTAL FOV'
+wri u^distfile q" 8'ddd''40c'" lenstr(^labtext) ^labtext
+
+wri u^distfile " 7    .000  -1.000"   ! change label orientation to vert.
+^xp == -1.5*^max*^sf
+^yp == -.4*^max*^sf
+^ypaper == (^xp-^x_orig)*^x_scale
+^xpaper == ^y_offset-(^yp-^y_orig)*^y_scale
+wri u^distfile q" 3 'DDD.DDD' 'DDD.DDD'" ^xpaper ^ypaper
+^labtext == 'VERTICAL FOV'
+wri u^distfile q" 8'ddd''40c'" lenstr(^labtext) ^labtext
+
+! Add note if anamorphism > 0.1% is present
+
+^anam_ratio == ^dely/^delx*(xob f2)/(yob f2) ! y/x
+if absf(^anam_ratio-1)>0.001
+  wri u^distfile " 7  -1.000   0.000"   ! change label orientation to horiz.
+  wri u^distfile " 6   0.125   0.125"   ! label size
+  wri u^distfile " 3   1.000   0.100"
+  wri u^distfile q" 8'ddd''25c''dd.5d'" 33 "Anamorphic Ratio (Y/X) = " ^anam_ratio
+end if
+
+! finalize and close the .PLT file
+
+wri u^distfile " 3   8.500   0.000"
+wri u^distfile " 2"
+clo u^distfile
+dro gbl distfile
+
+! restore lens
+LBL RESTORE_LENS
+res ^tempFile
+lib
+pur ^tempFile
+del ^tempFile
+rfn ^fil
+go
+
+IF ^RAY_FAIL = 0  ! Only run list the output when there is no ray trace error
+! list the output
+
+    if ^list='Y'
+    out y
+    wri
+    wri " Grid Distortion Data"
+    wri
+    if ^fil<>''
+        wri q" File:   '40c'" ^fil
+    end if
+    wri q" Title:  '40c'" (tit)
+    wri q" Date:   '11c'" (dat)
+    wri
+
+    if (dim)='M'
+        wri " Units are millimeters."
+    else if (dim)='C'
+        wri " Units are centimeters."
+    else if (dim)='I'
+        wri " Units are inches."
+    end if
+
+    if (typ fld)='ANG'
+        wri " Field type is angular."
+    else if (typ fld)='OBJ'
+        wri " Field type is object height."
+    else if (typ fld)='IMG'
+        wri " Field type is paraxial image height."
+    else if (typ fld)='RIH'
+        wri " Field type is real image height."
+    end if
+    wri q" Max X fld: 'd.ddd',   Max Y fld: 'd.ddd'" ^xfld ^yfld 
+    wri
+    wri " Relative field is relative to (equivalent) object height."
+    wri
+    wri q" Image center is at x = '3d.6d', y = '3d.6d'" ^xcen ^ycen
+    wri
+    wri " Rel X Fld  Rel Y Fld      Parax X      Parax Y       Real X       Real Y    Rad Dist%    Tan Dist%"
+
+    ^pi == 4*atanf(1)
+    ^format1 == " '4d.dd'    '4d.dd'    '4d.6d'  '4d.6d'  '4d.6d'  '4d.6d'     '4d.dd'      '4d.dd'"
+    ^format2 == " '4d.dd'    '4d.dd'    '4d.6d'  '4d.6d'     Chief Ray Failure"
+                                  
+    for ^i 1 ^num
+        for ^j 1 ^num
+            ^rxf == -1 + 2*(^j-1)/(^num-1)
+            ^ryf == 1 - 2*(^i-1)/(^num-1)
+            ^xx == ^x0(^i,^j)
+            ^yy == ^y0(^i,^j)
+
+            if not ^fail(^i,^j)
+
+                ! compute the radius and angle (0 - 2*pi) of the parax image
+                ^r0 == sqrtf(^xx*^xx+^yy*^yy)
+                if ^xx=0
+                    if ^yy<0
+                        ^ang0 == 3*^pi/2
+                    else if ^yy=0
+                        ^ang0 == 0
+                    else
+                        ^ang0 == ^pi/2
+                    end if
+                else
+                    ^ang0 == atanf(^yy/^xx)
+                    if ^xx>0
+                        if ^yy<0
+                            ^ang0 == 2*^pi+^ang0
+                        end if
+                    else
+                        if ^yy=0
+                            ^ang0 == ^pi
+                        else
+                            ^ang0 == ^ang0+^pi
+                        end if
+                    end if
+                end if
+
+                ! compute the coord. of the real image pt. wrt the parax pt.
+                ^dxx == ^x1(^i,^j)-^x0(^i,^j)
+                ^dyy == ^y1(^i,^j)-^y0(^i,^j)
+                ^drr == sqrtf(^dxx*^dxx+^dyy*^dyy)
+                if ^dxx=0             
+                    if ^dyy<0
+                        ^ang1 == 3*^pi/2
+                    else if ^dyy=0
+                        ^ang1 == 0
+                    else
+                        ^ang1 == ^pi/2
+                    end if
+                else
+                    ^ang1 == atanf(^dyy/^dxx)
+                    if ^dxx>0
+                        if ^dyy<0
+                            ^ang1 == 2*^pi+^ang1
+                        end if
+                    else
+                        if ^dyy=0
+                            ^ang1 == ^pi
+                        else
+                            ^ang1 == ^ang1+^pi
+                        end if
+                    end if
+                end if
+                ^dxx == ^drr*cosf(^ang1-^ang0+^pi/2)
+                ^dyy == ^drr*sinf(^ang1-^ang0+^pi/2)
+
+                ! radial and tangential distortion
+                if ^r0<1e-10
+                    ^rdist == 0
+                    ^tdist == 0
+                else
+                    ^rdist == ^dyy/^r0*100
+                    ^tdist == ^dxx/^r0*100
+                end if
+
+                wri q^format1 ^rxf ^ryf ^x0(^i,^j) ^y0(^i,^j) ^x1(^i,^j) &
+                    ^y1(^i,^j) ^rdist ^tdist
+            else
+                wri q^format2 ^rxf ^ryf ^x0(^i,^j) ^y0(^i,^j)
+            end if
+
+        end for
+    end for
+
+    out n
+    end if
+
+    ! 1/25/13 JW - Turn off PLT display since we now use a chart. The PLT file
+    ! is created and deleted as always so the user never sees it. This PLT
+    ! code is left in case it needs to be turned on in the future.
+    ! dpl $file_name     ! display the plot
+
+    ! if file name blank, delete plot file
+
+    ^file_name == #5
+    if trunc(^file_name)=''
+    lib
+    del distpltx.*.plt
+    go
+    end if
+
+
+
+    ! Chart the data
+    ^fuzzy == 1e-6  ! Constant to use in fuzzy comparisons to account for floating point roundoff errors
+
+    ! Get units to display on axes
+    if      (dim) = "M"; ^units == "mm"
+    else if (dim) = "I"; ^units == "in"
+    else;                ^units == "cm";
+    end if
+
+    ! Create title, adding Z qualifier as needed
+    ^ChartTitle == "Distortion Grid"
+    if (num z) > 1; 
+    ^ChartTitle == concat(concat(concat(^ChartTitle, " (Z"), num_to_str(^z)), ")"); 
+    end if
+    ^ChartTitle == concat(concat(^ChartTitle, " - "), (tit z^z))
+    uch
+
+    cht dist.xml   
+    tit ^ChartTitle
+    xla concat(concat("Horizontal FOV (", ^units), ")")
+    yla concat(concat("Vertical FOV (", ^units), ")")
+
+    if ^refgrid = 0
+    ^maxSeries == 1  ! User input No reference grid
+    else
+        ^maxSeries == 2
+    end if
+    for ^series 1 ^maxSeries  ! 1 Actual, 2 paraxial
+    
+    ! Set color and legend label
+    if ^series = 1
+        ^linColor == ^colorstr
+        ^legend == "Actual FOV"
+    else
+        ^linColor == "bla"
+        ^legend == "Paraxial FOV"
+    end if
+
+    ! Data for grid is one line that connects all the points in a zig zag fashion.
+    ! Start at top row and connect horizontal segments left to right, then next row 
+    ! right to left, next row left to right...
+    ! After last row, last point will be at left for even # of rows, or right for 
+    ! odd # of rows. From this last point, connect vertical segments from bottom to 
+    ! top, then next column top to bottom, next column bottom to top...
+    ! Grid points are skipped if the RayFail flag is set.
+    dpo ^legend
+        if (^series = 2) AND (^refgrid = 3)
+            pnt $linColor  ! Fiducial marks requested for reference grid
+                             ! refgrid choices, 0 = no grid, 1 = outline only, 2 = full grid, 3 = fiducial marks
+        else
+            lin 1 $linColor
+        end if
+    
+        ! Horizontal segments
+        ^j == 0
+        for ^i 1 ^num ! Loop over rows
+            ! Increment is +1 for left to right, -1 for right to left.
+            ! The column is incremented until it is < 1, or greater than max columns.
+            ! When the column count passes the boundary, it is reset to 1 or max columns,
+            ! and the increment is set to +1 or -1 respectively.
+            ! Using +/- ^fuzzy in comparisons (increments are integers) in case there are roundoff errors. 
+            if ^j > ^num+^fuzzy; ^j == ^num; ^incj == -1; end if
+            if ^j < 1-^fuzzy;    ^j == 1;    ^incj == 1;  end if
+            while ((^j > 1-^fuzzy) AND (^j < ^num+^fuzzy))
+                if ^series = 1 AND NOT(^fail(^i, ^j))
+                    ^x1(^i,^j) ^y1(^i,^j)  ! Actual image coords
+                else if (^series = 2) 
+                    ^x0(^i,^j) ^y0(^i,^j)  ! Paraxial image coords
+                end if
+                ^j == ^j + ^incj
+            end while
+        end for
+        
+        ! Vertical segments
+        ! First determine if the loop over column is left to right or right to
+        ! left depending on the last point traversed.   
+        if ^j < 1-^fuzzy
+             ^start == 1; ^end == ^num; ^incj == 1
+        else
+             ^start == ^num; ^end == 1; ^incj == -1
+        end if    
+        ^i == ^num+1
+        for ^j ^start ^end ^incj  ! Loop over columns
+            ! Increment is +1 for left to right, -1 for right to left.
+            ! The row is incremented until it is < 1, or greater than max rows.
+            ! When the row count passes the boundary, it is reset to 1 or max rows,
+            ! and the increment is set to +1 or -1 respectively.
+            ! Using +/- ^fuzzy in comparisons (increments are integers) in case there are roundoff errors. 
+            if ^i > ^num+^fuzzy; ^i == ^num; ^inci == -1; end if
+            if ^i < 1-^fuzzy;    ^i == 1;    ^inci == 1;  end if
+            while ((^i > 1-^fuzzy) AND (^i < ^num+^fuzzy))
+                if ^series = 1 AND NOT(^fail(^i, ^j)) 
+                    ^x1(^i,^j) ^y1(^i,^j)  ! Actual image coords
+                else if (^series = 2)
+                    ^x0(^i,^j) ^y0(^i,^j)  ! Paraxial image coords
+                end if
+                ^i == ^i + ^inci
+            end while
+        end for
+
+    end ! End of data set
+
+    end for ! Loop over series (actual then paraxial)
+
+    go ! Execute UCH chart
+
+END IF
+
+ver y
+out y
