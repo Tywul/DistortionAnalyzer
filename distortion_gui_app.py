@@ -339,7 +339,7 @@ class DistortionGUI(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Distortion Analyzer V1.1")
-        self.setGeometry(50, 50, 980, 700)
+        self.setGeometry(50, 50, 1500, 950)
         self.result = None
         self._wl_info = None   # cached wavelengths from SEQ
         self._corr_work_dir = ""
@@ -379,24 +379,11 @@ class DistortionGUI(QMainWindow):
         tab_corr = self._build_tab_correction()
         self.tabs.addTab(tab_corr, "  \U0001F4E6 Distortion Correction  ")
 
-        # ---- Bottom Shared Area ----
-        bottom_w = QWidget()
-        bot_lo = QHBoxLayout(bottom_w)
-        self.btn_run = QPushButton("  \u25b6 Start Analysis  ")
-        self.btn_run.setStyleSheet(
-            "font-size:14px;font-weight:bold;padding:8px;"
-            "background:#1976D2;color:white;border-radius:4px;")
-        self.btn_run.clicked.connect(self._on_run)
-        bot_lo.addWidget(self.btn_run)
-        self.btn_exp = QPushButton("  \U0001F4BE Export PNG  ")
-        self.btn_exp.clicked.connect(self._on_export)
-        bot_lo.addWidget(self.btn_exp)
-        bot_lo.addSpacing(20)
+        # ---- Progress Bar ----
         self.bar = QProgressBar(); self.bar.setRange(0, 1); self.bar.setTextVisible(True)
-        bot_lo.addWidget(self.bar, stretch=1)
-        main_lo.addWidget(bottom_w)
+        main_lo.addWidget(self.bar)
 
-        # Log area
+        # ---- Log area ----
         self.log = QTextEdit(); self.log.setMaximumHeight(110)
         self.log.setFont(QFont("Consolas", 9))
         self.log.setPlaceholderText("Analysis log output...")
@@ -462,8 +449,17 @@ class DistortionGUI(QMainWindow):
 
     # ---------- Tab 1: Distortion Grid ----------
     def _build_tab_grid(self):
-        w = QScrollArea(); w.setWidgetResizable(True)
-        panel = QWidget(); lo = QVBoxLayout(panel)
+        """Tab 1: left = parameters + buttons, right = matplotlib canvas."""
+        w = QWidget()
+        splitter = QSplitter(Qt.Horizontal)
+
+        # ---- Left: parameter panel ----
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setMinimumWidth(380)
+        left_panel = QWidget()
+        llo = QVBoxLayout(left_panel)
+        llo.setSpacing(6)
 
         # Wavelength Mode
         grp_wl = QGroupBox("Wavelength Mode")
@@ -471,11 +467,12 @@ class DistortionGUI(QMainWindow):
         self.bg_wl = QButtonGroup(self)
         self.rb_single = QRadioButton("Single Color (reference wavelength)")
         self.rb_multi = QRadioButton("Multi Color (all wavelengths)")
-        self.bg_wl.addButton(self.rb_single, 0); self.bg_wl.addButton(self.rb_multi, 1)
+        self.bg_wl.addButton(self.rb_single, 0)
+        self.bg_wl.addButton(self.rb_multi, 1)
         self.rb_single.setChecked(True)
         self.bg_wl.buttonClicked.connect(self._on_wl_mode_changed)
-        wl_lo.addWidget(self.rb_single); wl_lo.addWidget(self.rb_multi)
-        # Wavelength selector (only visible for single mode)
+        wl_lo.addWidget(self.rb_single)
+        wl_lo.addWidget(self.rb_multi)
         sel_lo = QHBoxLayout()
         self._lbl_wl = QLabel("Wavelength:")
         sel_lo.addWidget(self._lbl_wl)
@@ -483,25 +480,63 @@ class DistortionGUI(QMainWindow):
         sel_lo.addWidget(self.cb_wl_g)
         sel_lo.addStretch()
         wl_lo.addLayout(sel_lo)
-        lo.addWidget(grp_wl)
+        llo.addWidget(grp_wl)
 
         # Zoom positions
         self._grp_zoom_g = QGroupBox("Zoom Position(s)")
         self._zl_grid = QGridLayout(self._grp_zoom_g)
         self.chk_zoom = {}
-        self._rebuild_zoom_checkboxes(1)  # initial default, replaced on SEQ load
-        lo.addWidget(self._grp_zoom_g)
+        self._rebuild_zoom_checkboxes(1)
+        llo.addWidget(self._grp_zoom_g)
 
         # Parameters
-        lo.addWidget(self._build_param_group('g', 5, 5))
-        lo.addStretch()
-        w.setWidget(panel)
+        llo.addWidget(self._build_param_group('g', 5, 5))
+
+        # Buttons: Start Analysis + Export PNG
+        btn_lo = QHBoxLayout()
+        btn_run = QPushButton("  \u25b6 Start Analysis  ")
+        btn_run.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#1976D2;color:white;border-radius:4px;")
+        btn_run.clicked.connect(lambda: self._on_run_tab(0))
+        self._btn_run_g = btn_run
+        btn_exp = QPushButton("  \U0001F4BE Export PNG  ")
+        btn_exp.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#43a047;color:white;border-radius:4px;")
+        btn_exp.clicked.connect(lambda: self._on_export_tab(0))
+        btn_lo.addWidget(btn_run)
+        btn_lo.addWidget(btn_exp)
+        btn_lo.addStretch()
+        llo.addLayout(btn_lo)
+
+        llo.addStretch()
+        left_scroll.setWidget(left_panel)
+
+        # ---- Right: matplotlib canvas ----
+        right = self._build_canvas_tab("fig_g", "canvas_g", "tb_g", "Distortion Grid")
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(1, 1)
+
+        lo = QHBoxLayout(w)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.addWidget(splitter)
         return w
 
     # ---------- Tab 2: Pupil Swim ----------
     def _build_tab_pupil_swim(self):
-        w = QScrollArea(); w.setWidgetResizable(True)
-        panel = QWidget(); lo = QVBoxLayout(panel)
+        """Tab 2: left = parameters + buttons, right = matplotlib canvas."""
+        w = QWidget()
+        splitter = QSplitter(Qt.Horizontal)
+
+        # ---- Left: parameter panel ----
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setMinimumWidth(380)
+        left_panel = QWidget()
+        llo = QVBoxLayout(left_panel)
+        llo.setSpacing(6)
 
         # Zoom pair
         self._grp_zoom_ps = QGroupBox("Zoom Positions (Reference vs Target)")
@@ -510,8 +545,8 @@ class DistortionGUI(QMainWindow):
         self.cb_tgt = QComboBox()
         self._zl_ps.addRow("Reference:", self.cb_ref)
         self._zl_ps.addRow("Target:", self.cb_tgt)
-        self._rebuild_ps_zoom_combos(12)  # initial, replaced on SEQ load
-        lo.addWidget(self._grp_zoom_ps)
+        self._rebuild_ps_zoom_combos(12)
+        llo.addWidget(self._grp_zoom_ps)
 
         # Output format
         grp_of = QGroupBox("Output Format")
@@ -524,13 +559,44 @@ class DistortionGUI(QMainWindow):
         self.bg_fmt.addButton(self.rb_fmt_vec, 1)
         self.bg_fmt.addButton(self.rb_fmt_hm, 2)
         self.rb_fmt_both.setChecked(True)
-        of_lo.addWidget(self.rb_fmt_both); of_lo.addWidget(self.rb_fmt_vec); of_lo.addWidget(self.rb_fmt_hm)
-        lo.addWidget(grp_of)
+        of_lo.addWidget(self.rb_fmt_both)
+        of_lo.addWidget(self.rb_fmt_vec)
+        of_lo.addWidget(self.rb_fmt_hm)
+        llo.addWidget(grp_of)
 
         # Parameters
-        lo.addWidget(self._build_param_group('ps', 26.565, 26.565))
-        lo.addStretch()
-        w.setWidget(panel)
+        llo.addWidget(self._build_param_group('ps', 26.565, 26.565))
+
+        # Buttons: Start Analysis + Export PNG
+        btn_lo = QHBoxLayout()
+        btn_run = QPushButton("  \u25b6 Start Analysis  ")
+        btn_run.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#1976D2;color:white;border-radius:4px;")
+        btn_run.clicked.connect(lambda: self._on_run_tab(1))
+        self._btn_run_ps = btn_run
+        btn_exp = QPushButton("  \U0001F4BE Export PNG  ")
+        btn_exp.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#43a047;color:white;border-radius:4px;")
+        btn_exp.clicked.connect(lambda: self._on_export_tab(1))
+        btn_lo.addWidget(btn_run)
+        btn_lo.addWidget(btn_exp)
+        btn_lo.addStretch()
+        llo.addLayout(btn_lo)
+
+        llo.addStretch()
+        left_scroll.setWidget(left_panel)
+
+        # ---- Right: matplotlib canvas ----
+        right = self._build_canvas_tab("fig_ps", "canvas_ps", "tb_ps", "Pupil Swim")
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(right)
+        splitter.setStretchFactor(1, 1)
+
+        lo = QHBoxLayout(w)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.addWidget(splitter)
         return w
 
     # ---------- Tab 3: Distortion Correction ----------
@@ -540,8 +606,9 @@ class DistortionGUI(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
 
         # ── Left: control panel ──
-        left_scroll = QScrollArea(); left_scroll.setWidgetResizable(True)
-        left_scroll.setFixedWidth(420)
+        left_scroll = QScrollArea();         left_scroll.setWidgetResizable(True)
+        left_scroll.setMinimumWidth(400)
+        left_scroll.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
         left_panel = QWidget()
         llo = QVBoxLayout(left_panel); llo.setSpacing(6)
 
@@ -642,9 +709,12 @@ class DistortionGUI(QMainWindow):
             b = QPushButton(text); b.setMinimumHeight(32)
             b.setStyleSheet(f"font-weight:bold;background:{color};color:white;border-radius:3px;padding:4px 8px;")
             b.clicked.connect(slot); return b
-        btn_row.addWidget(_b("CODE V Calc", "#1565C0", self._run_correction_codev))
-        btn_row.addWidget(_b("Fit Only", "#2E7D32", self._run_correction_fit_only))
-        btn_row.addWidget(_b("Export CSV", "#6A1B9A", self._export_correction_csv))
+        self._btn_corr_run = _b("CODE V Calc", "#1565C0", self._run_correction_codev)
+        btn_row.addWidget(self._btn_corr_run)
+        self._btn_corr_fit = _b("Fit Only", "#2E7D32", self._run_correction_fit_only)
+        btn_row.addWidget(self._btn_corr_fit)
+        self._btn_corr_export = _b("Export CSV", "#6A1B9A", self._export_correction_csv)
+        btn_row.addWidget(self._btn_corr_export)
         llo.addLayout(btn_row)
 
         llo.addStretch()
@@ -857,7 +927,8 @@ class DistortionGUI(QMainWindow):
         self._log(f"WL: {', '.join(f'{labels[i]}:WL[{wl_eff[i]}]' for i in range(3))}")
         self._log(f"FOV H={halfx:.3f} V={halfy:.3f} Zoom={zoom} N={self.sb_corr_gs.value()}")
 
-        self.btn_run.setEnabled(False)
+        self._btn_corr_run.setEnabled(False)
+        self._btn_corr_fit.setEnabled(False)
         self.bar.setRange(0, 0)
 
         self._corr_worker = CorrectionWorker(
@@ -873,7 +944,8 @@ class DistortionGUI(QMainWindow):
         self._corr_thread.start()
 
     def _on_correction_done(self, work_dir, err):
-        self.btn_run.setEnabled(True)
+        self._btn_corr_run.setEnabled(True)
+        self._btn_corr_fit.setEnabled(True)
         self.bar.setRange(0, 1)
         if err:
             self._log(f"[Correction Error] {err}")
@@ -1238,7 +1310,12 @@ class DistortionGUI(QMainWindow):
         cfg['iqr_enabled'] = chk_iqr.isChecked()
         cfg['iqr_factor'] = sp_iqr.value()
 
-        self.btn_run.setEnabled(False)
+        # Disable the correct Start button
+        tab_idx = self.tabs.currentIndex()
+        if tab_idx == 0:
+            self._btn_run_g.setEnabled(False)
+        elif tab_idx == 1:
+            self._btn_run_ps.setEnabled(False)
         self.bar.setRange(0, 0)
         self._log(f"Start: {cfg['mode']}, SEQ={Path(seq).name}")
         self.worker = AnalysisWorker(seq, **cfg)
@@ -1247,8 +1324,46 @@ class DistortionGUI(QMainWindow):
         self.worker.error_signal.connect(self._on_err)
         self.worker.start()
 
+    # ---------- In-tab button slots ----------
+    def _on_run_tab(self, tab_index: int) -> None:
+        """Called by Start buttons inside Tab 1/2; switches to target tab then runs."""
+        self.tabs.setCurrentIndex(tab_index)
+        self._on_run()
+
+    def _on_export_tab(self, tab_index: int) -> None:
+        """Called by Export PNG buttons inside Tab 1/2; saves the in-tab canvas figure."""
+        fig_map = {0: getattr(self, 'fig_g', None), 1: getattr(self, 'fig_ps', None)}
+        fig = fig_map.get(tab_index)
+        if fig is None:
+            QMessageBox.information(self, "Hint", "Run analysis first")
+            return
+        out_dir = self.ed_out_g.text().strip() if tab_index == 0 else self.ed_out_ps.text().strip()
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        mode = self.result.get('mode', 'grid') if self.result else 'grid'
+        if tab_index == 0:
+            wl_mode = self.result.get('wl_mode', 'single') if self.result else 'single'
+            wl_val = list(self.result['results'].values())[0].get('wavelength', 625) if self.result and self.result.get('results') else 625
+            fname = f"distortion_grid_{wl_val:.0f}nm.png" if wl_mode == 'single' else "distortion_grid_multi.png"
+        else:
+            ref_id = self.result.get('ref_id', 2) if self.result else 2
+            tgt_id = self.result.get('tgt_id', 5) if self.result else 5
+            fname = f"ps_results_Z{ref_id}_Z{tgt_id}.png"
+        path = str(Path(out_dir) / fname)
+        try:
+            fig.savefig(path, dpi=200, bbox_inches='tight')
+            self._log(f"Exported: {path}")
+            QMessageBox.information(self, "Saved", f"Saved to:\n{path}")
+        except Exception as e:
+            self._log(f"Export error: {e}")
+            QMessageBox.warning(self, "Error", str(e))
+
     def _on_done(self, res: Optional[dict]) -> None:
-        self.btn_run.setEnabled(True)
+        # Re-enable the correct Start button
+        tab_idx = self.tabs.currentIndex()
+        if tab_idx == 0:
+            self._btn_run_g.setEnabled(True)
+        elif tab_idx == 1:
+            self._btn_run_ps.setEnabled(True)
         self.bar.setRange(0, 1)
         if not res: return
         self.result = res
@@ -1260,31 +1375,61 @@ class DistortionGUI(QMainWindow):
         QTimer.singleShot(300, self._auto_popup)
 
     def _on_err(self, e: str) -> None:
-        self.btn_run.setEnabled(True)
+        # Re-enable the correct Start button
+        tab_idx = self.tabs.currentIndex()
+        if tab_idx == 0:
+            self._btn_run_g.setEnabled(True)
+        elif tab_idx == 1:
+            self._btn_run_ps.setEnabled(True)
         self.bar.setRange(0, 1)
         self._log(f"ERROR: {e}")
         QMessageBox.critical(self, "Error", e)
 
     # ====================================================================
-    #  DRAWING — auto-popup on analysis complete
+    #  DRAWING — draw on in-tab canvas (no popup)
     # ====================================================================
     def _auto_popup(self):
-        """Popup chart(s) matching current analysis mode."""
+        """Draw results on the in-tab canvas after analysis completes."""
         if not self.result: return
         try:
             mode = self.result.get('mode', '?')
             if mode == 'grid':
                 wl_mode = self.result.get('wl_mode', 'single')
+                results = self.result['results']
+                x_fov = self.result.get('x_fov', 5.0)
+                y_fov = self.result.get('y_fov', 5.0)
+                self.fig_g.clear()
+                ax = self.fig_g.add_subplot(111)
                 if wl_mode == 'multi':
-                    self._draw_multi_color_popup()
+                    wavelengths = self.result.get('wavelengths', [])
+                    self._render_multi_color_grid(ax, results, x_fov, y_fov, wavelengths)
                 else:
-                    self._draw_single_color_popup()
+                    self._render_single_color_grid(ax, results, x_fov, y_fov)
+                self.fig_g.tight_layout()
+                self.canvas_g.draw()
+                self._log("Grid result drawn on canvas.")
             elif mode == 'pupil_swim':
                 fmt = self._output_format()
-                if fmt in ('both', 'vectors'):
-                    self._draw_ps_vectors_popup()
-                if fmt in ('both', 'heatmap'):
-                    self._draw_ps_heatmap_popup()
+                results = self.result['results']
+                ref_id = self.result['ref_id']
+                tgt_id = self.result['tgt_id']
+                x_fov = self.result.get('x_fov', 26.565)
+                y_fov = self.result.get('y_fov', 26.565)
+                self.fig_ps.clear()
+                if fmt == 'both':
+                    ax1 = self.fig_ps.add_subplot(211)
+                    self._render_ps_vectors(ax1, results, ref_id, tgt_id, x_fov, y_fov)
+                    ax2 = self.fig_ps.add_subplot(212)
+                    self._render_ps_heatmap(ax2, results, ref_id, tgt_id, x_fov, y_fov)
+                elif fmt == 'vectors':
+                    ax = self.fig_ps.add_subplot(111)
+                    self._render_ps_vectors(ax, results, ref_id, tgt_id, x_fov, y_fov)
+                else:
+                    ax = self.fig_ps.add_subplot(111)
+                    self._render_ps_heatmap(ax, results, ref_id, tgt_id, x_fov, y_fov)
+                self.fig_ps.tight_layout()
+                self.canvas_ps.draw()
+                self._log("Pupil Swim result drawn on canvas.")
         except Exception as e:
             self._log_exc("Draw err", e)
 
