@@ -34,6 +34,10 @@ Desktop.ini
 dist_z*.txt
 distpltx.plt
 polar_test*.txt
+r.txt
+g.txt
+b.txt
+svrapi_lens*.csv
 
 # PyInstaller working directory
 *.manifest

@@ -8,6 +8,7 @@ Distortion Analysis GUI App (PyQt5) v4.0
 
 from typing import Optional, Any
 import sys
+import traceback
 import numpy as np
 from pathlib import Path
 
@@ -16,9 +17,9 @@ from PyQt5.QtWidgets import (
     QGroupBox, QLabel, QPushButton, QComboBox, QCheckBox, QSpinBox,
     QDoubleSpinBox, QLineEdit, QTextEdit, QFileDialog, QSplitter,
     QProgressBar, QMessageBox, QGridLayout, QScrollArea, QFormLayout,
-    QDialog, QTabWidget, QRadioButton, QButtonGroup,
+    QDialog, QTabWidget, QRadioButton, QButtonGroup, QSizePolicy,
 )
-from PyQt5.QtCore import QThread, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject
 from PyQt5.QtGui import QFont, QIcon
 
 # --- matplotlib lazy init ---
@@ -221,6 +222,71 @@ class AnalysisWorker(QThread):
 
 
 # ============================================================
+#  Correction Worker (Tab 3: CODE V tracing + polynomial fitting)
+# ============================================================
+class CorrectionWorker(QObject):
+    """CODE V 后台追迹（独立 R/G/B 通道波长）+ 多项式拟合"""
+    progress = pyqtSignal(str)
+    finished = pyqtSignal(str, str)  # (work_dir, error_msg)
+
+    def __init__(self, seq_path, halfx, halfy, panel_w, panel_h,
+                 zoom, num_lines, wl_indices, macro_path):
+        super().__init__()
+        self.seq_path = seq_path; self.halfx = halfx; self.halfy = halfy
+        self.panel_w = panel_w; self.panel_h = panel_h
+        self.zoom = zoom; self.num_lines = num_lines
+        self.wl_indices = wl_indices; self.macro_path = macro_path
+
+    def run(self) -> None:
+        try:
+            import win32com.client
+        except ImportError:
+            self.finished.emit("", "未找到 win32com，请安装 pywin32：pip install pywin32")
+            return
+
+        macro = Path(self.macro_path)
+        if not macro.is_file():
+            self.finished.emit("", f"找不到宏文件：{self.macro_path}")
+            return
+
+        work_dir = str(Path(self.seq_path).parent)
+        try:
+            self.progress.emit("Connecting CODE V ...")
+            cv = win32com.client.Dispatch("CODEV.Command")
+            try: cv.StartCodeV()
+            except Exception: pass
+            cv.Command(f'CD "{work_dir}"')
+            cv.Command(f'IN "{self.seq_path}"')
+
+            out_names = ["r.txt", "g.txt", "b.txt"]
+            labels = ["R", "G", "B"]
+            traced = {}
+
+            for idx, wl in enumerate(self.wl_indices):
+                label = labels[idx]
+                outfile = str(Path(work_dir) / out_names[idx])
+                if wl in traced:
+                    self.progress.emit(f"{label} (WL={wl}, reuse) -> {out_names[idx]}")
+                    Path(outfile).write_text(traced[wl], encoding='utf-8')
+                else:
+                    self.progress.emit(f"Trace {label} (WL={wl}) ...")
+                    cv.Command(f"REF {wl}")
+                    cmd = (f'IN "{self.macro_path}" {self.halfx} {self.halfy} '
+                           f'{self.panel_w} {self.panel_h} '
+                           f'"" GRE {self.num_lines} {self.zoom} "Yes"')
+                    cv.Command(cmd)
+                    try: output = cv.GetCommandOutput()
+                    except Exception: output = ""
+                    traced[wl] = output
+                    Path(outfile).write_text(output, encoding='utf-8')
+                    self.progress.emit(f"  -> {out_names[idx]} ({len(output)} chars)")
+            self.progress.emit("CODE V done.")
+            self.finished.emit(work_dir, "")
+        except Exception as e:
+            self.finished.emit("", f"CODE V error: {e}\n{traceback.format_exc()}")
+
+
+# ============================================================
 #  Popup Dialog (independent matplotlib window)
 # ============================================================
 class FigureDialog(QDialog):
@@ -276,7 +342,11 @@ class DistortionGUI(QMainWindow):
         self.setGeometry(50, 50, 980, 700)
         self.result = None
         self._wl_info = None   # cached wavelengths from SEQ
+        self._corr_work_dir = ""
+        self._corr_csv_str = ""
+        self._corr_fit_result = None
         self._build_ui()
+        self._load_displays_db()
 
     # ==================== UI LAYOUT ====================
     def _build_ui(self):
@@ -304,6 +374,10 @@ class DistortionGUI(QMainWindow):
         # Tab 2: Pupil Swim
         tab_ps = self._build_tab_pupil_swim()
         self.tabs.addTab(tab_ps, "  \U0001F441 Pupil Swim  ")
+
+        # Tab 3: Distortion Correction
+        tab_corr = self._build_tab_correction()
+        self.tabs.addTab(tab_corr, "  \U0001F4E6 Distortion Correction  ")
 
         # ---- Bottom Shared Area ----
         bottom_w = QWidget()
@@ -459,12 +533,509 @@ class DistortionGUI(QMainWindow):
         w.setWidget(panel)
         return w
 
+    # ---------- Tab 3: Distortion Correction ----------
+    def _build_tab_correction(self):
+        """Build Tab 3: polynomial fitting + svrapi_lens CSV export."""
+        w = QWidget()
+        splitter = QSplitter(Qt.Horizontal)
+
+        # ── Left: control panel ──
+        left_scroll = QScrollArea(); left_scroll.setWidgetResizable(True)
+        left_scroll.setFixedWidth(420)
+        left_panel = QWidget()
+        llo = QVBoxLayout(left_panel); llo.setSpacing(6)
+
+        # 1. Wavelength (R/G/B)
+        grp_wl = QGroupBox("1. Wavelength (R/G/B)")
+        wlay = QFormLayout(grp_wl); wlay.setVerticalSpacing(3)
+        self.cmb_corr_wl = []; self.chk_corr_wl = []; self.lbl_corr_nm = []
+        for lbl in ["R", "G", "B"]:
+            row = QHBoxLayout()
+            chk = QCheckBox(); chk.setChecked(True)
+            chk.setToolTip(f"Checked=use selected WL for {lbl}; unchecked=center WL")
+            self.chk_corr_wl.append(chk); row.addWidget(chk)
+            cmb = QComboBox(); cmb.setMinimumWidth(140)
+            cmb.addItem("(no SEQ)", None); self.cmb_corr_wl.append(cmb); row.addWidget(cmb)
+            nm = QLabel(""); nm.setMinimumWidth(55)
+            nm.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.lbl_corr_nm.append(nm); row.addWidget(nm)
+            wlay.addRow(f"  {lbl}:", row)
+        self.lbl_corr_center = QLabel("Center WL: (no SEQ)")
+        self.lbl_corr_center.setStyleSheet("color:#555;")
+        wlay.addRow(QLabel(""), self.lbl_corr_center)
+        llo.addWidget(grp_wl)
+
+        # 2. Trace params
+        grp_tr = QGroupBox("2. Trace Parameters")
+        trlay = QFormLayout(grp_tr); trlay.setVerticalSpacing(3)
+        self.cmb_corr_fovh = QComboBox(); self.cmb_corr_fovh.setEditable(True)
+        self.cmb_corr_fovh.setMinimumWidth(120)
+        self.cmb_corr_fovh.setToolTip("H half-FOV from XAN, editable")
+        trlay.addRow("H half-FOV (deg):", self.cmb_corr_fovh)
+        self.cmb_corr_fovv = QComboBox(); self.cmb_corr_fovv.setEditable(True)
+        self.cmb_corr_fovv.setMinimumWidth(120)
+        self.cmb_corr_fovv.setToolTip("V half-FOV from YAN, editable")
+        trlay.addRow("V half-FOV (deg):", self.cmb_corr_fovv)
+        self.cmb_corr_zoom = QComboBox(); self.cmb_corr_zoom.setMinimumWidth(150)
+        self.cmb_corr_zoom.addItem("(no SEQ)", 1)
+        trlay.addRow("Zoom:", self.cmb_corr_zoom)
+        self.dsb_corr_pw = QDoubleSpinBox(); self.dsb_corr_pw.setRange(0.01, 999)
+        self.dsb_corr_pw.setValue(11.904); self.dsb_corr_pw.setDecimals(3)
+        trlay.addRow("Panel half-W (mm):", self.dsb_corr_pw)
+        self.dsb_corr_ph = QDoubleSpinBox(); self.dsb_corr_ph.setRange(0.01, 999)
+        self.dsb_corr_ph.setValue(11.904); self.dsb_corr_ph.setDecimals(3)
+        trlay.addRow("Panel half-H (mm):", self.dsb_corr_ph)
+        self.sb_corr_gs = QSpinBox(); self.sb_corr_gs.setRange(3, 21)
+        self.sb_corr_gs.setValue(21)
+        trlay.addRow("Grid lines:", self.sb_corr_gs)
+        self.chk_corr_sym_h = QCheckBox("Horizontal symmetry (Y fit even-order)")
+        self.chk_corr_sym_h.setChecked(True)
+        self.chk_corr_sym_v = QCheckBox("Vertical symmetry (X fit even-order)")
+        self.chk_corr_sym_v.setChecked(False)
+        trlay.addRow("Symmetry:", self.chk_corr_sym_h)
+        trlay.addRow("", self.chk_corr_sym_v)
+        llo.addWidget(grp_tr)
+
+        # 3. Display panel
+        grp_disp = QGroupBox("3. Display Panel")
+        dplay = QFormLayout(grp_disp); dplay.setVerticalSpacing(3)
+        self.cmb_corr_brand = QComboBox(); self.cmb_corr_brand.setMinimumWidth(150)
+        self.cmb_corr_model = QComboBox(); self.cmb_corr_model.setMinimumWidth(150)
+        self.cmb_corr_brand.activated.connect(self._on_corr_brand_changed)
+        self.cmb_corr_model.activated.connect(self._on_corr_model_changed)
+        dplay.addRow("Brand:", self.cmb_corr_brand)
+        dplay.addRow("Model:", self.cmb_corr_model)
+
+        self.sb_corr_w0 = QSpinBox(); self.sb_corr_w0.setRange(1, 99999); self.sb_corr_w0.setValue(1920)
+        self.sb_corr_h0 = QSpinBox(); self.sb_corr_h0.setRange(1, 99999); self.sb_corr_h0.setValue(1080)
+        self.sb_corr_w = QSpinBox(); self.sb_corr_w.setRange(1, 99999); self.sb_corr_w.setValue(1920)
+        self.sb_corr_h = QSpinBox(); self.sb_corr_h.setRange(1, 99999); self.sb_corr_h.setValue(1080)
+        self.dsb_corr_px = QDoubleSpinBox(); self.dsb_corr_px.setRange(0.0001, 5.0)
+        self.dsb_corr_px.setValue(0.00756); self.dsb_corr_px.setDecimals(6)
+        self.sb_corr_cols = QSpinBox(); self.sb_corr_cols.setRange(3, 101); self.sb_corr_cols.setValue(17)
+        self.sb_corr_rows = QSpinBox(); self.sb_corr_rows.setRange(3, 101); self.sb_corr_rows.setValue(9)
+        self.dsb_corr_ox = QDoubleSpinBox(); self.dsb_corr_ox.setRange(-9999, 9999); self.dsb_corr_ox.setValue(0); self.dsb_corr_ox.setDecimals(3)
+        self.dsb_corr_oy = QDoubleSpinBox(); self.dsb_corr_oy.setRange(-9999, 9999); self.dsb_corr_oy.setValue(0); self.dsb_corr_oy.setDecimals(3)
+
+        dplay.addRow("Active W (px):", self.sb_corr_w0)
+        dplay.addRow("Active H (px):", self.sb_corr_h0)
+        dplay.addRow("Pre-correction W (px):", self.sb_corr_w)
+        dplay.addRow("Pre-correction H (px):", self.sb_corr_h)
+        dplay.addRow("Pixel size (mm/px):", self.dsb_corr_px)
+        dplay.addRow("NumCols:", self.sb_corr_cols)
+        dplay.addRow("NumRows:", self.sb_corr_rows)
+        dplay.addRow("Offset X (px):", self.dsb_corr_ox)
+        dplay.addRow("Offset Y (px):", self.dsb_corr_oy)
+        llo.addWidget(grp_disp)
+
+        # 4. Manual load
+        grp_load = QGroupBox("4. Manual Load (skip CODE V)")
+        gload = QHBoxLayout(grp_load)
+        self.le_corr_dir = QLineEdit(); self.le_corr_dir.setPlaceholderText("Directory with r/g/b.txt")
+        btn_ld = QPushButton("Browse..."); btn_ld.clicked.connect(self._browse_corr_dir)
+        gload.addWidget(self.le_corr_dir); gload.addWidget(btn_ld)
+        llo.addWidget(grp_load)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        def _b(text, color, slot):
+            b = QPushButton(text); b.setMinimumHeight(32)
+            b.setStyleSheet(f"font-weight:bold;background:{color};color:white;border-radius:3px;padding:4px 8px;")
+            b.clicked.connect(slot); return b
+        btn_row.addWidget(_b("CODE V Calc", "#1565C0", self._run_correction_codev))
+        btn_row.addWidget(_b("Fit Only", "#2E7D32", self._run_correction_fit_only))
+        btn_row.addWidget(_b("Export CSV", "#6A1B9A", self._export_correction_csv))
+        llo.addLayout(btn_row)
+
+        llo.addStretch()
+        left_scroll.setWidget(left_panel)
+
+        # ── Right: matplotlib canvas ──
+        right = self._build_canvas_tab("fig_corr", "canvas_corr", "tb_corr", "Distortion Grid")
+        right_tabs = QTabWidget()
+        right_tabs.addTab(right, "Distortion Grid")
+
+        splitter.addWidget(left_scroll)
+        splitter.addWidget(right_tabs)
+        splitter.setStretchFactor(1, 1)
+
+        lo = QHBoxLayout(w); lo.setContentsMargins(0, 0, 0, 0)
+        lo.addWidget(splitter)
+        return w
+
+    def _build_canvas_tab(self, fig_attr, canvas_attr, toolbar_attr, title):
+        """Build a single matplotlib canvas tab (in-tab embedding, not popup)."""
+        _init_mpl()
+        from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+        from matplotlib.figure import Figure
+
+        tab = QWidget()
+        tl = QVBoxLayout(tab)
+        fig = Figure(figsize=(8, 6))
+        canvas = FigureCanvas(fig)
+        canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        tb = NavigationToolbar(canvas, tab)
+        tl.addWidget(tb); tl.addWidget(canvas)
+        setattr(self, fig_attr, fig)
+        setattr(self, canvas_attr, canvas)
+        setattr(self, toolbar_attr, tb)
+        return tab
+
+    def _load_displays_db(self):
+        """Load display panel database for correction tab."""
+        from distortion_correction import load_displays_db
+        db_path = str(Path(__file__).parent / "displays.json")
+        self._displays_db = load_displays_db(db_path)
+        brands = sorted(set(d["brand"] for d in self._displays_db))
+        self.cmb_corr_brand.clear()
+        self.cmb_corr_brand.addItem("(manual)", None)
+        for b in brands:
+            self.cmb_corr_brand.addItem(b, b)
+        self.cmb_corr_model.clear()
+        self.cmb_corr_model.addItem("(manual)", -1)
+
+    def _on_corr_brand_changed(self, idx):
+        self.cmb_corr_model.clear()
+        brand = self.cmb_corr_brand.currentData()
+        if brand is None:
+            self.cmb_corr_model.addItem("(manual)", -1)
+        else:
+            items = sorted((d for d in self._displays_db if d["brand"] == brand),
+                           key=lambda d: d["model"])
+            self.cmb_corr_model.addItem("Select model...", -1)
+            for d in items:
+                sz = f'{d["size"]}" ' if d["size"] > 0 else ""
+                idx_db = self._displays_db.index(d)
+                self.cmb_corr_model.addItem(f"{sz}{d['model']}", idx_db)
+
+    def _on_corr_model_changed(self, idx):
+        entry_idx = self.cmb_corr_model.currentData()
+        if entry_idx is None or entry_idx < 0:
+            return
+        entry = self._displays_db[entry_idx]
+        self.sb_corr_w0.setValue(entry["width0"])
+        self.sb_corr_h0.setValue(entry["height0"])
+        self.dsb_corr_px.setValue(entry["pixelsize_mm"])
+        self.sb_corr_w.setValue(entry["width0"])
+        self.sb_corr_h.setValue(entry["height0"])
+        pw = entry["width0"] * entry["pixelsize_mm"] / 2
+        ph = entry["height0"] * entry["pixelsize_mm"] / 2
+        self.dsb_corr_pw.setValue(pw)
+        self.dsb_corr_ph.setValue(ph)
+
+    def _browse_corr_dir(self):
+        d = QFileDialog.getExistingDirectory(self, "Select txt directory")
+        if d:
+            self.le_corr_dir.setText(d)
+
+    # ========== Correction: populate SEQ info ==========
+    def _populate_corr_seq_info(self):
+        """Populate correction tab widgets from loaded SEQ data."""
+        from distortion_analyzer import DistortionAnalyzer
+        seq = self.ed_seq.text().strip()
+        if not Path(seq).is_file():
+            return
+
+        try:
+            num_zooms = DistortionAnalyzer.get_zoom_count_from_seq(seq)
+            zoom_names = DistortionAnalyzer.get_zoom_names_from_seq(seq)
+        except Exception:
+            num_zooms = 1; zoom_names = {}
+
+        # Zoom
+        self.cmb_corr_zoom.clear()
+        for zid in range(1, num_zooms + 1):
+            name = zoom_names.get(zid, '')
+            label = f"Z{zid}: {name}" if name else f"Z{zid}"
+            self.cmb_corr_zoom.addItem(label, zid)
+
+        # Wavelengths
+        try:
+            wl_info = DistortionAnalyzer.get_wavelengths_from_seq(seq)
+            wavelengths = wl_info['wavelengths']
+            ref_idx = wl_info['ref_index']
+            ref_nm = wavelengths[ref_idx - 1] if ref_idx <= len(wavelengths) else wavelengths[0]
+            self.lbl_corr_center.setText(f"Center WL: WL[{ref_idx}] = {ref_nm:.1f}nm")
+        except Exception:
+            wavelengths = [625.0]; ref_idx = 1; ref_nm = 625.0
+            self.lbl_corr_center.setText("Center WL: (unknown)")
+
+        for cmb in self.cmb_corr_wl:
+            cmb.clear()
+        for i, cmb in enumerate(self.cmb_corr_wl):
+            for wi, v in enumerate(wavelengths):
+                cmb.addItem(f"WL[{wi+1}] = {v:.1f}nm", wi + 1)
+            # Defaults: R->longest, G->center, B->shortest
+            if len(wavelengths) >= 3:
+                defaults = {0: max(wavelengths), 1: ref_nm, 2: min(wavelengths)}
+                target = defaults.get(i, ref_nm)
+                for j, v in enumerate(wavelengths):
+                    if abs(v - target) < 1.0:
+                        cmb.setCurrentIndex(j); break
+            elif cmb.count() > 1:
+                cmb.setCurrentIndex(min(ref_idx - 1, cmb.count() - 1))
+            # Update nm label
+            cd = cmb.currentData()
+            if cd is not None and cd <= len(wavelengths):
+                self.lbl_corr_nm[i].setText(f"{wavelengths[cd - 1]:.1f}nm")
+            else:
+                self.lbl_corr_nm[i].setText("")
+
+        # Connect combobox change -> update labels
+        for i, cmb in enumerate(self.cmb_corr_wl):
+            try: cmb.currentIndexChanged.disconnect()
+            except Exception: pass
+        def _make_updater(idx):
+            return lambda: self._update_corr_wl_label(idx)
+        for i, cmb in enumerate(self.cmb_corr_wl):
+            cmb.currentIndexChanged.connect(_make_updater(i))
+
+        # FOV
+        try:
+            fov_info = DistortionAnalyzer.get_fov_from_seq(seq)
+            x_fov, y_fov = fov_info['x_max'], fov_info['y_max']
+        except Exception:
+            x_fov, y_fov = 26.565, 26.565
+
+        self.cmb_corr_fovh.clear()
+        self.cmb_corr_fovv.clear()
+        if x_fov > 0:
+            self.cmb_corr_fovh.addItem(f"{x_fov:.4f}", x_fov)
+            self.cmb_corr_fovh.setCurrentIndex(0)
+        if y_fov > 0:
+            self.cmb_corr_fovv.addItem(f"{y_fov:.4f}", y_fov)
+            self.cmb_corr_fovv.setCurrentIndex(0)
+
+    def _update_corr_wl_label(self, idx):
+        cmb = self.cmb_corr_wl[idx]
+        txt = cmb.currentText()
+        if "=" in txt:
+            self.lbl_corr_nm[idx].setText(txt.split("=")[-1].strip())
+        else:
+            self.lbl_corr_nm[idx].setText(txt)
+
+    # ========== Correction: handlers ==========
+    def _run_correction_codev(self) -> None:
+        seq = self.ed_seq.text().strip()
+        if not Path(seq).is_file():
+            QMessageBox.warning(self, "Error", "Select a valid .seq file"); return
+
+        wl_sel = [cmb.currentData() for cmb in self.cmb_corr_wl]
+        if any(v is None for v in wl_sel):
+            QMessageBox.warning(self, "Error", "Load a SEQ file first"); return
+
+        center_text = self.lbl_corr_center.text()
+        center_wl = wl_sel[1]
+        if "WL[" in center_text:
+            try:
+                center_wl = int(center_text.split("WL[")[1].split("]")[0])
+            except (ValueError, IndexError):
+                pass
+
+        wl_eff = []
+        for i in range(3):
+            if self.chk_corr_wl[i].isChecked():
+                wl_eff.append(wl_sel[i])
+            else:
+                wl_eff.append(center_wl)
+
+        try:
+            halfx = self.cmb_corr_fovh.currentData()
+            halfy = self.cmb_corr_fovv.currentData()
+            if halfx is None: halfx = float(self.cmb_corr_fovh.currentText())
+            if halfy is None: halfy = float(self.cmb_corr_fovv.currentText())
+        except (ValueError, TypeError):
+            QMessageBox.warning(self, "Error", "Invalid FOV value"); return
+
+        zoom = self.cmb_corr_zoom.currentData() or 1
+        macro = str(Path(__file__).parent / "dist_real_pro.seq")
+
+        self._log("=" * 50)
+        self._log(f"Correction CODE V: {Path(seq).name}")
+        labels = ["R", "G", "B"]
+        self._log(f"WL: {', '.join(f'{labels[i]}:WL[{wl_eff[i]}]' for i in range(3))}")
+        self._log(f"FOV H={halfx:.3f} V={halfy:.3f} Zoom={zoom} N={self.sb_corr_gs.value()}")
+
+        self.btn_run.setEnabled(False)
+        self.bar.setRange(0, 0)
+
+        self._corr_worker = CorrectionWorker(
+            seq, halfx, halfy,
+            self.dsb_corr_pw.value(), self.dsb_corr_ph.value(),
+            zoom, self.sb_corr_gs.value(), wl_eff, macro)
+        self._corr_thread = QThread()
+        self._corr_worker.moveToThread(self._corr_thread)
+        self._corr_worker.progress.connect(self._log)
+        self._corr_worker.finished.connect(self._on_correction_done)
+        self._corr_worker.finished.connect(self._corr_thread.quit)
+        self._corr_thread.started.connect(self._corr_worker.run)
+        self._corr_thread.start()
+
+    def _on_correction_done(self, work_dir, err):
+        self.btn_run.setEnabled(True)
+        self.bar.setRange(0, 1)
+        if err:
+            self._log(f"[Correction Error] {err}")
+            QMessageBox.critical(self, "CODE V Error", err[:500])
+            return
+        self._corr_work_dir = work_dir
+        self.le_corr_dir.setText(work_dir)
+        self._run_correction_fit(work_dir)
+
+    def _run_correction_fit_only(self):
+        ld = self.le_corr_dir.text().strip()
+        if not ld:
+            seq = self.ed_seq.text().strip()
+            if Path(seq).is_file():
+                ld = str(Path(seq).parent)
+            else:
+                QMessageBox.warning(self, "Error", "Specify txt directory or load SEQ first"); return
+        self._corr_work_dir = ld
+        self._run_correction_fit(ld)
+
+    def _run_correction_fit(self, work_dir):
+        from distortion_correction import parse_dist_txt, fit_distortion, build_csv_content
+        self._log(f"Reading txt: {work_dir}")
+        try:
+            paths = {c: str(Path(work_dir) / f"{c}.txt") for c in ["r", "g", "b"]}
+            for p in paths.values():
+                if not Path(p).is_file():
+                    raise FileNotFoundError(f"Not found: {p}")
+
+            rd = parse_dist_txt(paths["r"])
+            gd = parse_dist_txt(paths["g"])
+            bd = parse_dist_txt(paths["b"])
+            self._log(f"Data points: R={len(rd)}, G={len(gd)}, B={len(bd)}")
+
+            disdata = np.stack([rd, gd, bd], axis=2)
+            p = self._corr_params()
+
+            self._log("Fitting...")
+            QApplication.processEvents()
+
+            rdx, rdy, pdx, pdy, ix, iy = fit_distortion(
+                disdata=disdata,
+                pixelsize=p["pixelsize"],
+                Width0=p["Width0"], Height0=p["Height0"],
+                Width=p["Width"], Height=p["Height"],
+                NumCols=p["NumCols"], NumRows=p["NumRows"],
+                OffsetXPixel=p["OffsetXPixel"], OffsetYPixel=p["OffsetYPixel"],
+                sym_h=self.chk_corr_sym_h.isChecked(),
+                sym_v=self.chk_corr_sym_v.isChecked(),
+            )
+
+            SizeX = p["Width0"] * p["pixelsize"]
+            SizeY = p["Height0"] * p["pixelsize"]
+            OffsetY = p["OffsetYPixel"] * p["pixelsize"]
+
+            self._corr_csv_str = build_csv_content(
+                SizeX, SizeY, p["NumCols"], p["NumRows"], OffsetY,
+                ix, iy, pdx, pdy, rdx, rdy,
+            )
+            self._corr_fit_result = dict(
+                rdx=rdx, rdy=rdy, pdx=pdx, pdy=pdy,
+                ix=ix, iy=iy,
+                NumCols=p["NumCols"], NumRows=p["NumRows"],
+                pixelsize=p["pixelsize"], disdata=disdata,
+            )
+
+            self._log("Fitting done. Drawing...")
+            self._draw_correction_grid()
+            self._log("Done! Click 'Export CSV' to save.")
+
+        except Exception as e:
+            self._log(f"[Fit Error] {e}\n{traceback.format_exc()}")
+            QMessageBox.critical(self, "Fit Error", str(e))
+
+    def _corr_params(self) -> dict:
+        return dict(
+            Width0=self.sb_corr_w0.value(), Height0=self.sb_corr_h0.value(),
+            Width=self.sb_corr_w.value(), Height=self.sb_corr_h.value(),
+            pixelsize=self.dsb_corr_px.value(),
+            NumCols=self.sb_corr_cols.value(), NumRows=self.sb_corr_rows.value(),
+            OffsetXPixel=self.dsb_corr_ox.value(), OffsetYPixel=self.dsb_corr_oy.value(),
+        )
+
+    def _draw_correction_grid(self):
+        """Draw fitted distortion grid on the embedded canvas."""
+        r = self._corr_fit_result
+        NC, NR = r["NumCols"], r["NumRows"]
+        px = r["pixelsize"]
+        disdata = r["disdata"]
+        n_pts = int(round(disdata.shape[0] ** 0.5))
+        off_y = self.dsb_corr_oy.value()
+
+        self.fig_corr.clear()
+        ax = self.fig_corr.add_subplot(111)
+        ax.set_aspect("equal")
+        ax.set_facecolor("#f9f9f9")
+        ax.set_title("Distortion Grid (dashed=CODE V raw, solid=fitted, black=ideal)", fontsize=10)
+        ax.set_xlabel("x (pixel)"); ax.set_ylabel("y (pixel)")
+
+        colors = ["#e53935", "#43a047", "#1e88e5"]
+        labels = ["R", "G", "B"]
+
+        # CODE V raw (dashed)
+        for n in range(3):
+            RX = disdata[:, 2, n].reshape(n_pts, n_pts) / px
+            RY = disdata[:, 3, n].reshape(n_pts, n_pts) / px
+            for i in range(n_pts):
+                ax.plot(RX[i, :], RY[i, :], "--", color=colors[n], alpha=0.3, lw=0.7)
+                ax.plot(RX[:, i], RY[:, i], "--", color=colors[n], alpha=0.3, lw=0.7)
+
+        # Fitted (solid)
+        for n in range(3):
+            rxg = r["rdx"][:, n].reshape(NR, NC, order='F') / px
+            ryg = r["rdy"][:, n].reshape(NR, NC, order='F') / px - off_y
+            for i in range(NR):
+                ax.plot(rxg[i, :], ryg[i, :], "-", color=colors[n], lw=1.0,
+                        label=f"Fitted-{labels[n]}" if i == 0 else "")
+            for j in range(NC):
+                ax.plot(rxg[:, j], ryg[:, j], "-", color=colors[n], lw=1.0)
+
+        # Ideal (black)
+        w0 = self.sb_corr_w0.value(); h0 = self.sb_corr_h0.value()
+        refx, refy = np.meshgrid(
+            np.linspace(-w0 / 2, w0 / 2, NC),
+            np.linspace(h0 / 2, -h0 / 2, NR)
+        )
+        for i in range(NR):
+            ax.plot(refx[i, :], refy[i, :], "-", color="black", lw=0.6, alpha=0.4,
+                    label="Ideal" if i == 0 else "")
+        for j in range(NC):
+            ax.plot(refx[:, j], refy[:, j], "-", color="black", lw=0.6, alpha=0.4)
+
+        ax.legend(loc="upper right", fontsize=8, ncol=2)
+        ax.grid(True, linestyle=":", alpha=0.3)
+        self.fig_corr.tight_layout()
+        self.canvas_corr.draw()
+
+    def _export_correction_csv(self):
+        if not hasattr(self, '_corr_csv_str') or not self._corr_csv_str:
+            QMessageBox.warning(self, "Hint", "Run fit first before exporting"); return
+
+        wd = self._corr_work_dir if hasattr(self, '_corr_work_dir') and self._corr_work_dir else ""
+        default = str(Path(wd) / "svrapi_lens_left.csv") if wd else ""
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV (left)", default,
+                                               "CSV (*.csv);;All (*)")
+        if not path: return
+
+        Path(path).write_text(self._corr_csv_str, newline='')
+        right_path = path.replace("_left.csv", "_right.csv")
+        Path(right_path).write_text(self._corr_csv_str, newline='')
+
+        self._log(f"CSV saved: {path}")
+        self._log(f"           {right_path}")
+        QMessageBox.information(self, "Saved", f"Saved:\n{path}\n{right_path}")
+
     # ========== File Browsers ==========
     def _browse_seq(self):
         p, _ = QFileDialog.getOpenFileName(self, "Open SEQ", "", "SEQ (*.seq);;All (*)")
         if p:
             self.ed_seq.setText(p)
             self._load_wavelengths(p)
+            self._populate_corr_seq_info()
             # Auto-set output dir to {program_root}/{lens_name}/
             lens_name = Path(p).stem
             out_dir = str(Path(__file__).parent / lens_name)
@@ -620,6 +1191,11 @@ class DistortionGUI(QMainWindow):
             return
 
         idx = self.tabs.currentIndex()
+
+        if idx == 2:
+            # === Correction tab: delegate to its own handler ===
+            self._run_correction_codev()
+            return
 
         if idx == 0:
             # === Distortion Grid mode ===
