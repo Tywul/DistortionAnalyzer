@@ -1,4 +1,4 @@
-# Distortion Analyzer V1.1
+# Distortion Analyzer V1.2
 
 畸变分析工具 — 基于 CODE V COM 接口的光学畸变网格分析与 Pupil Swim 评估。
 

@@ -45,7 +45,7 @@ WL_COLORS = ['red', 'green', 'blue', 'orange', 'purple', 'cyan',
 # ── i18n / help ──
 I18N = {
     "zh": {
-        "app_title": "畸变分析器 V1.1",
+        "app_title": "畸变分析器 V1.2",
         "status_tip": "加载镜头文件后，点击开始分析。",
         "settings": "设置",
         "language": "界面语言",
@@ -160,7 +160,7 @@ I18N = {
         "browse_output_dir": "选择输出目录",
     },
     "en": {
-        "app_title": "Distortion Analyzer V1.1",
+        "app_title": "Distortion Analyzer V1.2",
         "status_tip": "Load a lens file, then click Start Analysis.",
         "settings": "Settings",
         "language": "Language",
