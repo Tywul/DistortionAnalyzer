@@ -18,7 +18,7 @@ distortion_analyzer.py — 畸变分析模块
     analyzer.load_lens(r"D:\\BaiduSyncdisk\\My Optics\\Pancake\\VR132P\\VR132090-0417.seq")
     
     # 获取畸变网格
-    grid = analyzer.get_distortion_grid(zoom_pos=1, x_fov=26.565, y_fov=26.565, num_lines=21)
+    grid = analyzer.get_distortion_grid(zoom_pos=1, x_fov=5.0, y_fov=5.0, num_lines=21)
     
     # 绘制网格
     analyzer.plot_grid(grid, title="Zoom 1 Distortion Grid")
@@ -164,7 +164,7 @@ class DistortionAnalyzer:
     def connect(self) -> 'DistortionAnalyzer':
         """连接 CODE V COM 接口"""
         if self._cv is None:
-            self._cv = win32com.client.Dispatch("CODEV.Command")
+            self._cv = win32com.client.Dispatch("CODEV.Application")
             try:
                 self._cv.StartCodeV()
             except Exception:
@@ -413,11 +413,11 @@ class DistortionAnalyzer:
     
     def get_distortion_grid(self,
                            zoom_pos: int = 1,
-                           x_fov: float = 26.565,
-                           y_fov: float = 26.565,
+                           x_fov: float = 5.0,
+                           y_fov: float = 5.0,
                            num_lines: int = 21,
-                           panel_width: float = 11.904,
-                           panel_height: float = 11.904,
+                           panel_width: float = 0.0,
+                           panel_height: float = 0.0,
                            use_polar: bool = False,
                            max_radius: float = 0,
                            wavelength: str = "RED",
@@ -847,11 +847,11 @@ class DistortionAnalyzer:
     
     def analyze_zoom_range(self,
                           zoom_positions: List[int],
-                          x_fov: float = 26.565,
-                          y_fov: float = 26.565,
+                          x_fov: float = 5.0,
+                          y_fov: float = 5.0,
                           num_lines: int = 21,
-                          panel_width: float = 11.904,
-                          panel_height: float = 11.904) -> Dict[int, DistortionGrid]:
+                          panel_width: float = 0.0,
+                          panel_height: float = 0.0) -> Dict[int, DistortionGrid]:
         """
         批量分析多个变焦位置
         
@@ -904,8 +904,8 @@ class DistortionAnalyzer:
 
 def quick_distortion_analysis(lens_path: str,
                               zoom_positions: List[int],
-                              x_fov: float = 26.565,
-                              y_fov: float = 26.565,
+                              x_fov: float = 5.0,
+                              y_fov: float = 5.0,
                               num_lines: int = 21,
                               output_dir: Optional[str] = None) -> Dict[int, DistortionGrid]:
     """
@@ -925,8 +925,8 @@ def quick_distortion_analysis(lens_path: str,
         grids = quick_distortion_analysis(
             lens_path=r"D:\\...\\lens.seq",
             zoom_positions=[1, 2, 3],
-            x_fov=26.565,
-            y_fov=26.565
+            x_fov=5.0,
+            y_fov=5.0
         )
     """
     analyzer = DistortionAnalyzer()

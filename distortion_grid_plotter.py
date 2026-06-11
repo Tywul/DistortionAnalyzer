@@ -71,7 +71,7 @@ def get_cv():
     if _cv is None:
         if not _HAS_WIN32:
             raise RuntimeError("需要 pywin32: pip install pywin32")
-        _cv = win32com.client.Dispatch("CODEV.Command")
+        _cv = win32com.client.Dispatch("CODEV.Application")
         try:
             _cv.StartCodeV()
         except Exception:

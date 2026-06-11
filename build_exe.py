@@ -70,6 +70,7 @@ def build(skip_cleanup: bool = False) -> None:
     data_files = [
         f"dist_real_pro.seq{os.pathsep}.",
         f"dist_polar_pro.seq{os.pathsep}.",
+        f"displays.json{os.pathsep}.",
     ]
 
     cmd = [

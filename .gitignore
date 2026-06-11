@@ -41,3 +41,4 @@ svrapi_lens*.csv
 
 # PyInstaller working directory
 *.manifest
+*.zip

@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QLineEdit, QTextEdit, QFileDialog, QSplitter,
     QProgressBar, QMessageBox, QGridLayout, QScrollArea, QFormLayout,
     QDialog, QTabWidget, QRadioButton, QButtonGroup, QSizePolicy,
+    QDialogButtonBox,
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject
 from PyQt5.QtGui import QFont, QIcon
@@ -30,6 +31,8 @@ def _init_mpl():
     global _mpl_ready
     if _mpl_ready:
         return
+    import matplotlib
+    matplotlib.use('Qt5Agg')
     import matplotlib.pyplot as _plt
     _plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']
     _plt.rcParams['axes.unicode_minus'] = False
@@ -38,6 +41,302 @@ def _init_mpl():
 # Wavelength-to-color mapping for multi-color overlay
 WL_COLORS = ['red', 'green', 'blue', 'orange', 'purple', 'cyan',
              'magenta', 'olive', 'brown', 'pink', 'gray', 'black']
+
+# ── i18n / help ──
+I18N = {
+    "zh": {
+        "app_title": "畸变分析器 V1.1",
+        "status_tip": "加载镜头文件后，点击开始分析。",
+        "settings": "设置",
+        "language": "界面语言",
+        "help": "使用说明",
+        "help_content": (
+            "畸变分析器使用说明\n\n"
+            "1. 加载镜头文件\n"
+            "   点击“浏览...”选择 .seq 文件，自动读取波长和变焦信息。\n\n"
+            "2. 畸变网格分析 (Tab 1)\n"
+            "   - 选择波长模式（单色/多色叠加）和变焦位。\n"
+            "   - 点击“开始分析”运行 CODE V 追踪。\n"
+            "   - 结果在右侧画布显示，可点击“导出 PNG”保存。\n\n"
+            "3. 畸变校正 (Tab 1 下半部分)\n"
+            "   - CODE V 模式：自动用三个波长分别追踪。\n"
+            "   - TXT 模式：手动导入 r.txt/g.txt/b.txt。\n"
+            "   - 点击“拟合校正”拟合多项式系数。\n"
+            "   - 点击“导出 CSV”导出 svrapi_lens.csv。\n\n"
+            "4. 瞳孔游动 (Tab 2)\n"
+            "   分析变焦位间的光线位移，支持矢量和热力图视图。\n\n"
+            "5. 设置 (右上角齿轮图标)\n"
+            "   切换界面语言 / 查看使用说明。"
+        ),
+        "lens_file": "镜头文件",
+        "browse": "浏览...",
+        "tab_distortion": "畸变网格",
+        "tab_correction": "校正",
+        "tab_pupil_swim": "瞳孔游动",
+        "select_all": "全选",
+        "clear": "清除",
+        "start_analysis": "开始分析",
+        "fit_correction": "拟合校正",
+        "fit_from_txt": "从 TXT 拟合",
+        "export_csv": "导出 CSV",
+        "export_png": "导出 PNG",
+        "select_valid_seq": "请选择有效的 .seq 文件",
+        "load_seq_first": "请先加载 SEQ 文件",
+        "seq_not_found": "未找到 SEQ 文件：\n{seq}",
+        "select_at_least_one_zoom": "至少选择一个变焦位",
+        "ref_target_different": "参考和目标变焦位必须不同",
+        "run_analysis_first": "请先运行分析",
+        "run_fit_first": "请先运行拟合再导出",
+        "select_txt_file": "请至少选择一个 R/G/B TXT 文件",
+        "no_data_yet": "尚无数据",
+        "export_csv_save_title": "导出 CSV（左侧）",
+        "save_png": "保存 PNG",
+        "close": "关闭",
+        "save_png_title": "保存 PNG",
+        "saved_message": "已保存：\n{path}",
+        "fit_error_title": "拟合错误",
+        "zoom_item": "Z{id}",
+        "zoom_item_with_name": "Z{id} {name}",
+        "zoom_tooltip": "变焦 {id}",
+        "wavelength_item": "W{id}: {wl:.1f}nm{ref}",
+        "ref_tag": " (REF)",
+        "manual": "（手动）",
+        "select_model": "选择型号...",
+        "seq_placeholder": ".seq 文件路径...",
+        "log_placeholder": "分析日志输出...",
+        "parameters": "参数",
+        "x_half_fov": "X 半 FOV (°):",
+        "y_half_fov": "Y 半 FOV (°):",
+        "grid_size": "网格尺寸:",
+        "axis_range": "轴范围:",
+        "x_range_label": "±X (mm):",
+        "y_range_label": "±Y (mm):",
+        "x_range_tooltip": "±X 范围 (mm), 0=自动",
+        "y_range_tooltip": "±Y 范围 (mm), 0=自动",
+        "enable_iqr": "启用异常值移除 (IQR)",
+        "iqr_factor": "IQR 因子:",
+        "output_dir": "输出目录:",
+        "wavelength_mode": "波长模式",
+        "single_color": "单色 (参考波长)",
+        "multi_color": "多色 (全部波长)",
+        "wavelength_label": "波长:",
+        "zoom_positions": "变焦位",
+        "correction_section": "校正（多项式拟合 + CSV 导出）",
+        "panel_half_w": "面板半宽:",
+        "panel_half_h": "面板半高:",
+        "zoom_label": "变焦:",
+        "brand": "品牌:",
+        "model": "型号:",
+        "active_w_px": "有效宽 (px):",
+        "active_h_px": "有效高 (px):",
+        "pre_corr_w_px": "校正前宽 (px):",
+        "pre_corr_h_px": "校正前高 (px):",
+        "pixel_size": "像素尺寸 (mm):",
+        "numcols": "列数:",
+        "numrows": "行数:",
+        "offset_x": "偏移 X (px):",
+        "offset_y": "偏移 Y (px):",
+        "h_symmetry": "水平对称 (Y 偶次项)",
+        "v_symmetry": "垂直对称 (X 偶次项)",
+        "source": "来源:",
+        "code_v": "CODE V",
+        "txt_files": "TXT 文件",
+        "file_label": "{channel} 文件:",
+        "zoom_positions_ref_target": "变焦位 (参考 vs 目标)",
+        "reference": "参考:",
+        "target": "目标:",
+        "output_format": "输出格式",
+        "both_grid_vectors_heatmap": "矢量+热力图（推荐）",
+        "grid_vectors_only": "仅矢量",
+        "heatmap_only": "仅热力图",
+        "grid_vectors": "矢量",
+        "heatmap": "热力图",
+        "app_help_title": "帮助",
+        "error_title": "错误",
+        "hint_title": "提示",
+        "saved_title": "已保存",
+        "open_seq_title": "打开 SEQ",
+        "open_txt_title": "打开 Trace TXT",
+        "browse_output_dir": "选择输出目录",
+    },
+    "en": {
+        "app_title": "Distortion Analyzer V1.1",
+        "status_tip": "Load a lens file, then click Start Analysis.",
+        "settings": "Settings",
+        "language": "Language",
+        "help": "Help",
+        "help_content": (
+            "Distortion Analyzer User Guide\n\n"
+            "1. Load Lens File\n"
+            "   Click Browse to select a .seq file. Wavelengths and\n"
+            "   zoom info are read automatically.\n\n"
+            "2. Distortion Grid Analysis (Tab 1)\n"
+            "   - Select wavelength mode (single/multi) and zoom positions.\n"
+            "   - Click Start Analysis to run CODE V tracing.\n"
+            "   - Results shown on right canvas. Export PNG to save.\n\n"
+            "3. Distortion Correction (Tab 1, lower section)\n"
+            "   - CODE V mode: auto-trace with three wavelengths.\n"
+            "   - TXT mode: manually import r.txt/g.txt/b.txt.\n"
+            "   - Click Fit Correction to fit polynomial coefficients.\n"
+            "   - Click Export CSV to save svrapi_lens.csv.\n\n"
+            "4. Pupil Swim (Tab 2)\n"
+            "   Analyze ray shifts between zoom positions. Supports vector\n"
+            "   and heatmap views.\n\n"
+            "5. Settings (gear icon, top right)\n"
+            "   Switch UI language / view help."
+        ),
+        "lens_file": "Lens File",
+        "browse": "Browse...",
+        "tab_distortion": "Distortion Grid",
+        "tab_correction": "Correction",
+        "tab_pupil_swim": "Pupil Swim",
+        "select_all": "Select All",
+        "clear": "Clear",
+        "start_analysis": "Start Analysis",
+        "fit_correction": "Fit Correction",
+        "fit_from_txt": "Fit from TXT",
+        "save_png": "Save PNG",
+        "close": "Close",
+        "save_png_title": "Save PNG",
+        "saved_message": "Saved to:\n{path}",
+        "fit_error_title": "Fit Error",
+        "zoom_item": "Z{id}",
+        "zoom_item_with_name": "Z{id} {name}",
+        "zoom_tooltip": "Zoom {id}",
+        "wavelength_item": "W{id}: {wl:.1f}nm{ref}",
+        "ref_tag": " (REF)",
+        "select_valid_seq": "Select a valid .seq file",
+        "load_seq_first": "Load a SEQ file first",
+        "seq_not_found": "SEQ not found:\n{seq}",
+        "select_at_least_one_zoom": "Select at least 1 Zoom position",
+        "ref_target_different": "Ref and Target must be different",
+        "run_analysis_first": "Run analysis first",
+        "run_fit_first": "Run fit first before exporting",
+        "select_txt_file": "Select at least one R/G/B TXT file",
+        "no_data_yet": "No data yet",
+        "export_csv_save_title": "Export CSV (left)",
+        "manual": "(manual)",
+        "select_model": "Select model...",
+        "seq_placeholder": ".seq path...",
+        "log_placeholder": "Analysis log output...",
+        "parameters": "Parameters",
+        "x_half_fov": "X Half-FOV (°):",
+        "y_half_fov": "Y Half-FOV (°):",
+        "grid_size": "Grid Size:",
+        "axis_range": "Axis Range:",
+        "x_range_label": "±X (mm):",
+        "y_range_label": "±Y (mm):",
+        "x_range_tooltip": "±X range (mm), 0=auto",
+        "y_range_tooltip": "±Y range (mm), 0=auto",
+        "enable_iqr": "Enable Outlier Removal (IQR)",
+        "iqr_factor": "IQR Factor:",
+        "output_dir": "Output Dir:",
+        "wavelength_mode": "Wavelength Mode",
+        "single_color": "Single Color (reference wavelength)",
+        "multi_color": "Multi Color (all wavelengths)",
+        "wavelength_label": "Wavelength:",
+        "zoom_positions": "Zoom Position(s)",
+        "correction_section": "Correction (Polynomial Fit + CSV Export)",
+        "panel_half_w": "Panel half-W:",
+        "panel_half_h": "half-H:",
+        "zoom_label": "Zoom:",
+        "brand": "Brand:",
+        "model": "Model:",
+        "active_w_px": "Active W (px):",
+        "active_h_px": "Active H (px):",
+        "pre_corr_w_px": "Pre-corr W (px):",
+        "pre_corr_h_px": "Pre-corr H (px):",
+        "pixel_size": "Pixel size (mm):",
+        "numcols": "NumCols:",
+        "numrows": "NumRows:",
+        "offset_x": "Offset X (px):",
+        "offset_y": "Offset Y (px):",
+        "h_symmetry": "H symmetry (Y even-order)",
+        "v_symmetry": "V symmetry (X even-order)",
+        "source": "Source:",
+        "code_v": "CODE V",
+        "txt_files": "TXT files",
+        "file_label": "{channel} file:",
+        "zoom_positions_ref_target": "Zoom Positions (Reference vs Target)",
+        "reference": "Reference:",
+        "target": "Target:",
+        "output_format": "Output Format",
+        "both_grid_vectors_heatmap": "Both Grid Vectors + Heatmap (Recommended)",
+        "grid_vectors_only": "Grid Vectors Only",
+        "heatmap_only": "Heatmap Only",
+        "grid_vectors": "Grid Vectors",
+        "heatmap": "Heatmap",
+        "app_help_title": "Help",
+        "error_title": "Error",
+        "hint_title": "Hint",
+        "saved_title": "Saved",
+        "open_seq_title": "Open SEQ",
+        "open_txt_title": "Open Trace TXT",
+        "browse_output_dir": "Select Output Directory",
+    },
+}
+_current_lang = "zh"
+
+
+# ============================================================
+#  Settings Dialog
+# ============================================================
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(I18N[_current_lang]["settings"])
+        self.setMinimumSize(500, 420)
+        lo = QVBoxLayout(self)
+
+        tabs = QTabWidget()
+        # Tab: Language
+        tab_lang = QWidget()
+        lang_lo = QVBoxLayout(tab_lang)
+        lang_lo.addWidget(QLabel(I18N[_current_lang]["language"] + ":"))
+        self.cb_lang = QComboBox()
+        self.cb_lang.addItem("中文", "zh")
+        self.cb_lang.addItem("English", "en")
+        self.cb_lang.setCurrentIndex(0 if _current_lang == "zh" else 1)
+        lang_lo.addWidget(self.cb_lang)
+        lang_lo.addStretch()
+        tabs.addTab(tab_lang, I18N[_current_lang]["language"])
+
+        # Tab: Help
+        tab_help = QWidget()
+        help_lo = QVBoxLayout(tab_help)
+        te = QTextEdit()
+        te.setReadOnly(True)
+        te.setPlainText(I18N[_current_lang]["help_content"])
+        help_lo.addWidget(te)
+        tabs.addTab(tab_help, I18N[_current_lang]["help"])
+
+        lo.addWidget(tabs)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(self._apply)
+        btns.rejected.connect(self.reject)
+        lo.addWidget(btns)
+
+    def _apply(self):
+        global _current_lang
+        new_lang = self.cb_lang.currentData()
+        if new_lang != _current_lang:
+            _current_lang = new_lang
+            # Refresh dialog itself
+            self.setWindowTitle(I18N[_current_lang]["settings"])
+            tabs = self.findChild(QTabWidget)
+            if tabs:
+                tabs.setTabText(0, I18N[_current_lang]["language"])
+                tabs.setTabText(1, I18N[_current_lang]["help"])
+                tw = tabs.widget(1)  # help tab
+                if isinstance(tw, QWidget):
+                    te = tw.findChild(QTextEdit)
+                    if te:
+                        te.setPlainText(I18N[_current_lang]["help_content"])
+            # Refresh main window
+            p = self.parent()
+            if p is not None and hasattr(p, '_refresh_ui_language'):
+                p._refresh_ui_language()
+        self.accept()
 
 
 # ============================================================
@@ -69,6 +368,7 @@ class AnalysisWorker(QThread):
         self.kwargs = kwargs
 
     def run(self) -> None:
+        analyzer = None
         try:
             from distortion_analyzer import DistortionAnalyzer
 
@@ -93,11 +393,17 @@ class AnalysisWorker(QThread):
             else:
                 raise ValueError(f"Unknown mode: {mode}")
 
-            analyzer.disconnect()
             self.finished_signal.emit(result)
 
         except Exception as e:
             self.error_signal.emit(str(e))
+
+        finally:
+            if analyzer is not None:
+                try:
+                    analyzer.disconnect()
+                except Exception:
+                    pass
 
     @staticmethod
     def _pack_grid_result(grid, gs: int, **extra) -> dict:
@@ -252,7 +558,7 @@ class CorrectionWorker(QObject):
         work_dir = str(Path(self.seq_path).parent)
         try:
             self.progress.emit("Connecting CODE V ...")
-            cv = win32com.client.Dispatch("CODEV.Command")
+            cv = win32com.client.Dispatch("CODEV.Application")
             try: cv.StartCodeV()
             except Exception: pass
             cv.Command(f'CD "{work_dir}"')
@@ -275,7 +581,7 @@ class CorrectionWorker(QObject):
                            f'{self.panel_w} {self.panel_h} '
                            f'"" GRE {self.num_lines} {self.zoom} "Yes"')
                     cv.Command(cmd)
-                    try: output = cv.GetCommandOutput()
+                    try: output = cv.CommandOutput
                     except Exception: output = ""
                     traced[wl] = output
                     Path(outfile).write_text(output, encoding='utf-8')
@@ -307,8 +613,8 @@ class FigureDialog(QDialog):
         lo.addWidget(self.toolbar)
         lo.addWidget(self.canvas)
         btn_lo = QHBoxLayout()
-        btn_save = QPushButton("Save PNG"); btn_save.clicked.connect(self._save_png)
-        btn_close = QPushButton("Close"); btn_close.clicked.connect(self.accept)
+        btn_save = QPushButton(I18N[_current_lang]["save_png"]); btn_save.clicked.connect(self._save_png)
+        btn_close = QPushButton(I18N[_current_lang]["close"]); btn_close.clicked.connect(self.accept)
         btn_lo.addWidget(btn_save); btn_lo.addWidget(btn_close); btn_lo.addStretch()
         lo.addLayout(btn_lo)
         self._save_path = None
@@ -317,12 +623,13 @@ class FigureDialog(QDialog):
         self._save_path = path
 
     def _save_png(self):
-        p, _ = QFileDialog.getSaveFileName(self, "Save PNG",
+        p, _ = QFileDialog.getSaveFileName(self, I18N[_current_lang]["save_png_title"],
                                             self._save_path or "plot.png",
                                             "PNG (*.png);;PDF (*.pdf);;All (*)")
         if p:
             self.fig.savefig(p, dpi=200, bbox_inches='tight')
-            QMessageBox.information(self, "Saved", f"Saved to:\n{p}")
+            QMessageBox.information(self, I18N[_current_lang]["saved_title"],
+                                    I18N[_current_lang]["saved_message"].format(path=p))
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -338,13 +645,17 @@ class DistortionGUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Distortion Analyzer V1.1")
+        self.setWindowTitle(self._t("app_title"))
         self.setGeometry(50, 50, 1500, 950)
         self.result = None
         self._wl_info = None   # cached wavelengths from SEQ
+        self._loaded_seq_path = ""
         self._corr_work_dir = ""
         self._corr_csv_str = ""
         self._corr_fit_result = None
+        self._corr_wl_r = self._corr_wl_g = self._corr_wl_b = None
+        self._active_run_tab = None
+        self._localized_widgets = []
         self._build_ui()
         self._load_displays_db()
 
@@ -354,14 +665,22 @@ class DistortionGUI(QMainWindow):
         self.setCentralWidget(central)
         main_lo = QVBoxLayout(central)
 
-        # ---- Shared Lens File (above tabs) ----
-        grp_lens = QGroupBox("Lens File")
+        # ---- Top bar: Lens File + Settings ----
+        top_lo = QHBoxLayout()
+        grp_lens = self._register_text(QGroupBox(self._t("lens_file")), "lens_file", "setTitle")
+        self._grp_lens = grp_lens
         lens_lo = QHBoxLayout(grp_lens)
-        self.ed_seq = QLineEdit(); self.ed_seq.setPlaceholderText(".seq path...")
-        btn_lens = QPushButton("Browse..."); btn_lens.clicked.connect(self._browse_seq)
+        self.ed_seq = self._register_placeholder(QLineEdit(), "seq_placeholder")
+        btn_lens = self._register_text(QPushButton(self._t("browse")), "browse")
+        btn_lens.clicked.connect(self._browse_seq)
         lens_lo.addWidget(self.ed_seq, stretch=1)
         lens_lo.addWidget(btn_lens)
-        main_lo.addWidget(grp_lens)
+        top_lo.addWidget(grp_lens, stretch=1)
+        btn_settings = self._register_text(QPushButton("  \u2699\uFE0F " + self._t("settings") + "  "), "settings", template="  \u2699\uFE0F {label}  ")
+        self._btn_settings = btn_settings
+        btn_settings.clicked.connect(self._show_settings)
+        top_lo.addWidget(btn_settings)
+        main_lo.addLayout(top_lo)
 
         # ---- Tab Widget ----
         self.tabs = QTabWidget()
@@ -369,25 +688,33 @@ class DistortionGUI(QMainWindow):
 
         # Tab 1: Distortion Grid
         tab_grid = self._build_tab_grid()
-        self.tabs.addTab(tab_grid, "  \U0001F4CF Distortion Grid  ")
+        self.tabs.addTab(tab_grid, "  \U0001F4CF " + self._t("tab_distortion") + "  ")
 
         # Tab 2: Pupil Swim
         tab_ps = self._build_tab_pupil_swim()
-        self.tabs.addTab(tab_ps, "  \U0001F441 Pupil Swim  ")
-
-        # Tab 3: Distortion Correction
-        tab_corr = self._build_tab_correction()
-        self.tabs.addTab(tab_corr, "  \U0001F4E6 Distortion Correction  ")
+        self.tabs.addTab(tab_ps, "  \U0001F441 " + self._t("tab_pupil_swim") + "  ")
 
         # ---- Progress Bar ----
         self.bar = QProgressBar(); self.bar.setRange(0, 1); self.bar.setTextVisible(True)
         main_lo.addWidget(self.bar)
 
         # ---- Log area ----
-        self.log = QTextEdit(); self.log.setMaximumHeight(110)
+        self.log = self._register_placeholder(QTextEdit(), "log_placeholder")
+        self.log.setMaximumHeight(110)
         self.log.setFont(QFont("Consolas", 9))
-        self.log.setPlaceholderText("Analysis log output...")
         main_lo.addWidget(self.log)
+
+    def _register_text(self, widget, key, method='setText', fmt_args=None, template=None):
+        self._localized_widgets.append((widget, method, key, fmt_args, template))
+        return widget
+
+    def _register_placeholder(self, widget, key):
+        self._localized_widgets.append((widget, 'setPlaceholderText', key, None, None))
+        return widget
+
+    def _register_tooltip(self, widget, key):
+        self._localized_widgets.append((widget, 'setToolTip', key, None, None))
+        return widget
 
     # ========== Shared UI Builders ==========
     def _build_param_group(self, prefix: str, default_fov_x: float = 5,
@@ -397,43 +724,58 @@ class DistortionGUI(QMainWindow):
         Sets attributes on self as: sp_fovx_{prefix}, sp_fovy_{prefix}, sp_gs_{prefix},
         sp_xlim_{prefix}, sp_ylim_{prefix}, chk_iqr_{prefix}, sp_iqr_{prefix}, ed_out_{prefix}.
         """
-        grp_p = QGroupBox("Parameters")
+        grp_p = self._register_text(QGroupBox(self._t("parameters")), "parameters", "setTitle")
         pl = QFormLayout(grp_p)
 
         # FOV X/Y
         fovx = QDoubleSpinBox(); fovx.setRange(0.1, 90); fovx.setValue(default_fov_x); fovx.setDecimals(3)
-        pl.addRow("X Half-FOV (\u00b0):", fovx)
+        fovx.setMaximumWidth(80)
+        lbl_fovx = self._register_text(QLabel(self._t("x_half_fov")), "x_half_fov")
+        pl.addRow(lbl_fovx, fovx)
         fovy = QDoubleSpinBox(); fovy.setRange(0.1, 90); fovy.setValue(default_fov_y); fovy.setDecimals(3)
-        pl.addRow("Y Half-FOV (\u00b0):", fovy)
+        fovy.setMaximumWidth(80)
+        lbl_fovy = self._register_text(QLabel(self._t("y_half_fov")), "y_half_fov")
+        pl.addRow(lbl_fovy, fovy)
 
         # Grid Size
         gs = QSpinBox(); gs.setRange(11, 21); gs.setValue(21); gs.setSingleStep(2)
-        pl.addRow("Grid Size:", gs)
+        gs.setMaximumWidth(70)
+        lbl_gs = self._register_text(QLabel(self._t("grid_size")), "grid_size")
+        pl.addRow(lbl_gs, gs)
 
         # Axis Range
         h_box = QHBoxLayout()
         xlim = QDoubleSpinBox(); xlim.setRange(0, 50); xlim.setValue(0); xlim.setDecimals(2)
-        xlim.setToolTip("\u00b1X range (mm), 0=auto")
+        xlim.setMaximumWidth(70)
+        self._register_tooltip(xlim, "x_range_tooltip")
         ylim = QDoubleSpinBox(); ylim.setRange(0, 50); ylim.setValue(0); ylim.setDecimals(2)
-        ylim.setToolTip("\u00b1Y range (mm), 0=auto")
-        h_box.addWidget(QLabel("\u00b1X (mm):")); h_box.addWidget(xlim)
-        h_box.addWidget(QLabel("  \u00b1Y (mm):")); h_box.addWidget(ylim); h_box.addStretch()
-        pl.addRow("Axis Range:", h_box)
+        ylim.setMaximumWidth(70)
+        self._register_tooltip(ylim, "y_range_tooltip")
+        lbl_xlim = self._register_text(QLabel(self._t("x_range_label")), "x_range_label")
+        lbl_ylim = self._register_text(QLabel(self._t("y_range_label")), "y_range_label")
+        h_box.addWidget(lbl_xlim); h_box.addWidget(xlim)
+        h_box.addWidget(lbl_ylim); h_box.addWidget(ylim); h_box.addStretch()
+        lbl_axis = self._register_text(QLabel(self._t("axis_range")), "axis_range")
+        pl.addRow(lbl_axis, h_box)
 
         # IQR
-        chk_iqr = QCheckBox("Enable Outlier Removal (IQR)")
+        chk_iqr = self._register_text(QCheckBox(self._t("enable_iqr")), "enable_iqr")
         chk_iqr.setChecked(True)
         pl.addRow(chk_iqr)
         sp_iqr = QDoubleSpinBox(); sp_iqr.setRange(1.0, 5.0); sp_iqr.setValue(1.5)
-        sp_iqr.setEnabled(True)
+        sp_iqr.setEnabled(True); sp_iqr.setMaximumWidth(70)
         chk_iqr.toggled.connect(sp_iqr.setEnabled)
-        pl.addRow("IQR Factor:", sp_iqr)
+        lbl_iqr = self._register_text(QLabel(self._t("iqr_factor")), "iqr_factor")
+        pl.addRow(lbl_iqr, sp_iqr)
 
         # Output Dir
         ed_out = QLineEdit(self.DEFAULT_OUT)
-        btn_out = QPushButton("Browse...")
+        ed_out.setMaximumWidth(180)
+        btn_out = self._register_text(QPushButton(self._t("browse")), "browse")
         btn_out.clicked.connect(lambda checked, p=prefix: self._browse_out(p))
-        pl.addRow("Output Dir:", ed_out); pl.addRow(btn_out)
+        lbl_out = self._register_text(QLabel(self._t("output_dir")), "output_dir")
+        pl.addRow(lbl_out, ed_out)
+        pl.addRow(btn_out)
 
         # Store widgets as instance attributes
         setattr(self, f'sp_fovx_{prefix}', fovx)
@@ -447,26 +789,25 @@ class DistortionGUI(QMainWindow):
 
         return grp_p
 
-    # ---------- Tab 1: Distortion Grid ----------
+    # ---------- Tab 1: Distortion Grid + Correction ----------
     def _build_tab_grid(self):
-        """Tab 1: left = parameters + buttons, right = matplotlib canvas."""
+        """Tab 1: left = params + correction, right = canvas tabs (Distortion/Correction)."""
         w = QWidget()
-        splitter = QSplitter(Qt.Horizontal)
-
-        # ---- Left: parameter panel ----
+        lo = QHBoxLayout(w)
+        lo.setContentsMargins(0, 0, 0, 0)
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setMinimumWidth(380)
+        left_scroll.setMinimumWidth(310)
         left_panel = QWidget()
         llo = QVBoxLayout(left_panel)
         llo.setSpacing(6)
 
-        # Wavelength Mode
-        grp_wl = QGroupBox("Wavelength Mode")
+        # ── Wavelength Mode ──
+        grp_wl = self._register_text(QGroupBox(self._t("wavelength_mode")), "wavelength_mode", "setTitle")
         wl_lo = QVBoxLayout(grp_wl)
         self.bg_wl = QButtonGroup(self)
-        self.rb_single = QRadioButton("Single Color (reference wavelength)")
-        self.rb_multi = QRadioButton("Multi Color (all wavelengths)")
+        self.rb_single = self._register_text(QRadioButton(self._t("single_color")), "single_color")
+        self.rb_multi = self._register_text(QRadioButton(self._t("multi_color")), "multi_color")
         self.bg_wl.addButton(self.rb_single, 0)
         self.bg_wl.addButton(self.rb_multi, 1)
         self.rb_single.setChecked(True)
@@ -474,87 +815,206 @@ class DistortionGUI(QMainWindow):
         wl_lo.addWidget(self.rb_single)
         wl_lo.addWidget(self.rb_multi)
         sel_lo = QHBoxLayout()
-        self._lbl_wl = QLabel("Wavelength:")
+        self._lbl_wl = self._register_text(QLabel(self._t("wavelength_label")), "wavelength_label")
         sel_lo.addWidget(self._lbl_wl)
         self.cb_wl_g = QComboBox()
+        self.cb_wl_g.setMaximumWidth(110)
         sel_lo.addWidget(self.cb_wl_g)
         sel_lo.addStretch()
         wl_lo.addLayout(sel_lo)
         llo.addWidget(grp_wl)
 
-        # Zoom positions
-        self._grp_zoom_g = QGroupBox("Zoom Position(s)")
+        # ── Zoom positions ──
+        self._grp_zoom_g = self._register_text(QGroupBox(self._t("zoom_positions")), "zoom_positions", "setTitle")
         self._zl_grid = QGridLayout(self._grp_zoom_g)
         self.chk_zoom = {}
+        self.cmb_corr_zoom = None  # created later in Correction section
         self._rebuild_zoom_checkboxes(1)
         llo.addWidget(self._grp_zoom_g)
 
-        # Parameters
+        # ── Parameters ──
         llo.addWidget(self._build_param_group('g', 5, 5))
 
-        # Buttons: Start Analysis + Export PNG
-        btn_lo = QHBoxLayout()
-        btn_run = QPushButton("  \u25b6 Start Analysis  ")
+        # ── Correction section ──
+        self._grp_corr = self._register_text(QGroupBox(self._t("correction_section")), "correction_section", "setTitle")
+        corr_lo = QVBoxLayout(self._grp_corr)
+        corr_lo.setSpacing(4)
+
+        # Panel Geometry
+        pg_lo = QHBoxLayout()
+        self.dsb_corr_pw = QDoubleSpinBox(); self.dsb_corr_pw.setRange(0.0, 999)
+        self.dsb_corr_pw.setValue(0.0); self.dsb_corr_pw.setDecimals(3)
+        self.dsb_corr_pw.setMaximumWidth(72)
+        self.dsb_corr_ph = QDoubleSpinBox(); self.dsb_corr_ph.setRange(0.0, 999)
+        self.dsb_corr_ph.setValue(0.0); self.dsb_corr_ph.setDecimals(3)
+        self.dsb_corr_ph.setMaximumWidth(72)
+        pg_lo.addWidget(self._register_text(QLabel(self._t("panel_half_w")), "panel_half_w")); pg_lo.addWidget(self.dsb_corr_pw)
+        pg_lo.addWidget(self._register_text(QLabel(self._t("panel_half_h")), "panel_half_h")); pg_lo.addWidget(self.dsb_corr_ph)
+        corr_lo.addLayout(pg_lo)
+
+        # Zoom selection
+        zoom_corr_lo = QHBoxLayout()
+        zoom_corr_lo.addWidget(self._register_text(QLabel(self._t("zoom_label")), "zoom_label"))
+        self.cmb_corr_zoom = QComboBox(); self.cmb_corr_zoom.setMaximumWidth(110)
+        zoom_corr_lo.addWidget(self.cmb_corr_zoom)
+        zoom_corr_lo.addStretch()
+        corr_lo.addLayout(zoom_corr_lo)
+
+        # Display panel
+        dp_lo = QFormLayout(); dp_lo.setVerticalSpacing(2)
+        self.cmb_corr_brand = QComboBox(); self.cmb_corr_brand.setMaximumWidth(140)
+        self.cmb_corr_model = QComboBox(); self.cmb_corr_model.setMaximumWidth(140)
+        self.cmb_corr_brand.activated.connect(self._on_corr_brand_changed)
+        self.cmb_corr_model.activated.connect(self._on_corr_model_changed)
+        dp_lo.addRow(self._register_text(QLabel(self._t("brand")), "brand"), self.cmb_corr_brand)
+        dp_lo.addRow(self._register_text(QLabel(self._t("model")), "model"), self.cmb_corr_model)
+        self.sb_corr_w0 = QSpinBox(); self.sb_corr_w0.setRange(1, 99999); self.sb_corr_w0.setValue(1920); self.sb_corr_w0.setMaximumWidth(80)
+        self.sb_corr_h0 = QSpinBox(); self.sb_corr_h0.setRange(1, 99999); self.sb_corr_h0.setValue(1080); self.sb_corr_h0.setMaximumWidth(80)
+        self.sb_corr_w = QSpinBox(); self.sb_corr_w.setRange(1, 99999); self.sb_corr_w.setValue(1920); self.sb_corr_w.setMaximumWidth(80)
+        self.sb_corr_h = QSpinBox(); self.sb_corr_h.setRange(1, 99999); self.sb_corr_h.setValue(1080); self.sb_corr_h.setMaximumWidth(80)
+        self.dsb_corr_px = QDoubleSpinBox(); self.dsb_corr_px.setRange(0.0001, 5.0)
+        self.dsb_corr_px.setValue(0.00756); self.dsb_corr_px.setDecimals(6); self.dsb_corr_px.setMaximumWidth(90)
+        self.sb_corr_cols = QSpinBox(); self.sb_corr_cols.setRange(3, 101); self.sb_corr_cols.setValue(17); self.sb_corr_cols.setMaximumWidth(70)
+        self.sb_corr_rows = QSpinBox(); self.sb_corr_rows.setRange(3, 101); self.sb_corr_rows.setValue(9); self.sb_corr_rows.setMaximumWidth(70)
+        self.dsb_corr_ox = QDoubleSpinBox(); self.dsb_corr_ox.setRange(-9999, 9999); self.dsb_corr_ox.setValue(0); self.dsb_corr_ox.setDecimals(3); self.dsb_corr_ox.setMaximumWidth(80)
+        self.dsb_corr_oy = QDoubleSpinBox(); self.dsb_corr_oy.setRange(-9999, 9999); self.dsb_corr_oy.setValue(0); self.dsb_corr_oy.setDecimals(3); self.dsb_corr_oy.setMaximumWidth(80)
+        dp_lo.addRow(self._register_text(QLabel(self._t("active_w_px")), "active_w_px"), self.sb_corr_w0)
+        dp_lo.addRow(self._register_text(QLabel(self._t("active_h_px")), "active_h_px"), self.sb_corr_h0)
+        dp_lo.addRow(self._register_text(QLabel(self._t("pre_corr_w_px")), "pre_corr_w_px"), self.sb_corr_w)
+        dp_lo.addRow(self._register_text(QLabel(self._t("pre_corr_h_px")), "pre_corr_h_px"), self.sb_corr_h)
+        dp_lo.addRow(self._register_text(QLabel(self._t("pixel_size")), "pixel_size"), self.dsb_corr_px)
+        dp_lo.addRow(self._register_text(QLabel(self._t("numcols")), "numcols"), self.sb_corr_cols)
+        dp_lo.addRow(self._register_text(QLabel(self._t("numrows")), "numrows"), self.sb_corr_rows)
+        dp_lo.addRow(self._register_text(QLabel(self._t("offset_x")), "offset_x"), self.dsb_corr_ox)
+        dp_lo.addRow(self._register_text(QLabel(self._t("offset_y")), "offset_y"), self.dsb_corr_oy)
+        corr_lo.addLayout(dp_lo)
+
+        # Symmetry
+        sym_lo = QHBoxLayout()
+        self.chk_corr_sym_h = self._register_text(QCheckBox(self._t("h_symmetry")), "h_symmetry")
+        self.chk_corr_sym_h.setChecked(True)
+        self.chk_corr_sym_v = self._register_text(QCheckBox(self._t("v_symmetry")), "v_symmetry")
+        self.chk_corr_sym_v.setChecked(False)
+        sym_lo.addWidget(self.chk_corr_sym_h); sym_lo.addWidget(self.chk_corr_sym_v)
+        corr_lo.addLayout(sym_lo)
+
+        # Source mode: CODE V vs TXT files
+        src_mode_lo = QHBoxLayout()
+        src_mode_lo.addWidget(self._register_text(QLabel(self._t("source")), "source"))
+        self.rb_corr_codev = self._register_text(QRadioButton(self._t("code_v")), "code_v")
+        self.rb_corr_txt = self._register_text(QRadioButton(self._t("txt_files")), "txt_files")
+        self.rb_corr_codev.setChecked(True)
+        self.bg_corr_src = QButtonGroup(self)
+        self.bg_corr_src.addButton(self.rb_corr_codev, 0)
+        self.bg_corr_src.addButton(self.rb_corr_txt, 1)
+        self.bg_corr_src.buttonClicked.connect(self._on_corr_src_changed)
+        src_mode_lo.addWidget(self.rb_corr_codev)
+        src_mode_lo.addWidget(self.rb_corr_txt)
+        src_mode_lo.addStretch()
+        corr_lo.addLayout(src_mode_lo)
+
+        # TXT file pickers (R/G/B, hidden by default)
+        self._corr_txt_rows = QVBoxLayout()
+        self._corr_txt_collect = []  # list of (QLabel, QLineEdit, QPushButton)
+
+        for ch in ["R", "G", "B"]:
+            row = QHBoxLayout()
+            lbl = self._register_text(QLabel(self._t("file_label").format(channel=ch)), "file_label", fmt_args={"channel": ch})
+            ed = QLineEdit()
+            ed.setMaximumWidth(200)
+            btn = self._register_text(QPushButton(self._t("browse")), "browse")
+            btn.clicked.connect(lambda checked, c=ch: self._browse_corr_txt(c))
+            row.addWidget(lbl)
+            row.addWidget(ed)
+            row.addWidget(btn)
+            self._corr_txt_rows.addLayout(row)
+            self._corr_txt_collect.append((lbl, ed, btn, row))
+        corr_lo.addLayout(self._corr_txt_rows)
+        # Hide TXT file rows initially
+        self._corr_txt_rows_set_visible(False)
+
+        llo.addWidget(self._grp_corr)
+
+        # ── Buttons: Row 1 (Analysis) ──
+        btn_lo1 = QHBoxLayout()
+        btn_run = self._register_text(QPushButton("  \u25b6 " + self._t("start_analysis") + "  "), "start_analysis", template="  \u25b6 {label}  ")
         btn_run.setStyleSheet(
             "font-size:13px;font-weight:bold;padding:6px 12px;"
             "background:#1976D2;color:white;border-radius:4px;")
         btn_run.clicked.connect(lambda: self._on_run_tab(0))
         self._btn_run_g = btn_run
-        btn_exp = QPushButton("  \U0001F4BE Export PNG  ")
+        btn_exp = self._register_text(QPushButton("  \U0001F4BE " + self._t("export_png") + "  "), "export_png", template="  \U0001F4BE {label}  ")
         btn_exp.setStyleSheet(
             "font-size:13px;font-weight:bold;padding:6px 12px;"
             "background:#43a047;color:white;border-radius:4px;")
         btn_exp.clicked.connect(lambda: self._on_export_tab(0))
-        btn_lo.addWidget(btn_run)
-        btn_lo.addWidget(btn_exp)
-        btn_lo.addStretch()
-        llo.addLayout(btn_lo)
+        btn_lo1.addWidget(btn_run)
+        btn_lo1.addWidget(btn_exp)
+        btn_lo1.addStretch()
+        llo.addLayout(btn_lo1)
+
+        # ── Buttons: Row 2 (Correction) ──
+        btn_lo2 = QHBoxLayout()
+        self._btn_corr_fit = self._register_text(QPushButton("  \U0001F9EE " + self._t("fit_correction") + "  "), "fit_correction", template="  \U0001F9EE {label}  ")
+        self._btn_corr_fit.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#E65100;color:white;border-radius:4px;")
+        self._btn_corr_fit.clicked.connect(self._on_fit_correction)
+        self._btn_corr_export = self._register_text(QPushButton("  \U0001F4E4 " + self._t("export_csv") + "  "), "export_csv", template="  \U0001F4E4 {label}  ")
+        self._btn_corr_export.setStyleSheet(
+            "font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#6A1B9A;color:white;border-radius:4px;")
+        self._btn_corr_export.clicked.connect(self._export_correction_csv)
+        btn_lo2.addWidget(self._btn_corr_fit)
+        btn_lo2.addWidget(self._btn_corr_export)
+        btn_lo2.addStretch()
+        llo.addLayout(btn_lo2)
 
         llo.addStretch()
         left_scroll.setWidget(left_panel)
 
-        # ---- Right: matplotlib canvas ----
-        right = self._build_canvas_tab("fig_g", "canvas_g", "tb_g", "Distortion Grid")
-        splitter.addWidget(left_scroll)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(1, 1)
-
-        lo = QHBoxLayout(w)
-        lo.setContentsMargins(0, 0, 0, 0)
-        lo.addWidget(splitter)
+        # ---- Right: canvas with Distortion / Correction tabs ----
+        canvas_dist = self._build_canvas_tab("fig_g", "canvas_g", "tb_g", "Distortion Grid")
+        canvas_corr = self._build_canvas_tab("fig_corr", "canvas_corr", "tb_corr", "Correction Grid")
+        self._right_tabs = QTabWidget()
+        self._right_tabs.addTab(canvas_dist, "  \U0001F4CF " + self._t("tab_distortion") + "  ")
+        self._right_tabs.addTab(canvas_corr, "  \U0001F9EE " + self._t("tab_correction") + "  ")
+        lo.addWidget(left_scroll)
+        lo.addWidget(self._right_tabs, 1)
         return w
 
     # ---------- Tab 2: Pupil Swim ----------
     def _build_tab_pupil_swim(self):
         """Tab 2: left = parameters + buttons, right = matplotlib canvas."""
         w = QWidget()
-        splitter = QSplitter(Qt.Horizontal)
+        lo = QHBoxLayout(w)
+        lo.setContentsMargins(0, 0, 0, 0)
 
         # ---- Left: parameter panel ----
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
-        left_scroll.setMinimumWidth(380)
+        left_scroll.setMinimumWidth(290)
         left_panel = QWidget()
         llo = QVBoxLayout(left_panel)
         llo.setSpacing(6)
 
         # Zoom pair
-        self._grp_zoom_ps = QGroupBox("Zoom Positions (Reference vs Target)")
+        self._grp_zoom_ps = self._register_text(QGroupBox(self._t("zoom_positions_ref_target")), "zoom_positions_ref_target", "setTitle")
         self._zl_ps = QFormLayout(self._grp_zoom_ps)
-        self.cb_ref = QComboBox()
-        self.cb_tgt = QComboBox()
-        self._zl_ps.addRow("Reference:", self.cb_ref)
-        self._zl_ps.addRow("Target:", self.cb_tgt)
+        self.cb_ref = QComboBox(); self.cb_ref.setMaximumWidth(110)
+        self.cb_tgt = QComboBox(); self.cb_tgt.setMaximumWidth(110)
+        self._zl_ps.addRow(self._register_text(QLabel(self._t("reference")), "reference"), self.cb_ref)
+        self._zl_ps.addRow(self._register_text(QLabel(self._t("target")), "target"), self.cb_tgt)
         self._rebuild_ps_zoom_combos(12)
         llo.addWidget(self._grp_zoom_ps)
 
         # Output format
-        grp_of = QGroupBox("Output Format")
+        grp_of = self._register_text(QGroupBox(self._t("output_format")), "output_format", "setTitle")
         of_lo = QVBoxLayout(grp_of)
         self.bg_fmt = QButtonGroup(self)
-        self.rb_fmt_both = QRadioButton("Both Grid Vectors + Heatmap (Recommended)")
-        self.rb_fmt_vec = QRadioButton("Grid Vectors Only")
-        self.rb_fmt_hm = QRadioButton("Heatmap Only")
+        self.rb_fmt_both = self._register_text(QRadioButton(self._t("both_grid_vectors_heatmap")), "both_grid_vectors_heatmap")
+        self.rb_fmt_vec = self._register_text(QRadioButton(self._t("grid_vectors_only")), "grid_vectors_only")
+        self.rb_fmt_hm = self._register_text(QRadioButton(self._t("heatmap_only")), "heatmap_only")
         self.bg_fmt.addButton(self.rb_fmt_both, 0)
         self.bg_fmt.addButton(self.rb_fmt_vec, 1)
         self.bg_fmt.addButton(self.rb_fmt_hm, 2)
@@ -569,13 +1029,13 @@ class DistortionGUI(QMainWindow):
 
         # Buttons: Start Analysis + Export PNG
         btn_lo = QHBoxLayout()
-        btn_run = QPushButton("  \u25b6 Start Analysis  ")
+        btn_run = self._register_text(QPushButton("  \u25b6 " + self._t("start_analysis") + "  "), "start_analysis", template="  \u25b6 {label}  ")
         btn_run.setStyleSheet(
             "font-size:13px;font-weight:bold;padding:6px 12px;"
             "background:#1976D2;color:white;border-radius:4px;")
         btn_run.clicked.connect(lambda: self._on_run_tab(1))
         self._btn_run_ps = btn_run
-        btn_exp = QPushButton("  \U0001F4BE Export PNG  ")
+        btn_exp = self._register_text(QPushButton("  \U0001F4BE " + self._t("export_png") + "  "), "export_png", template="  \U0001F4BE {label}  ")
         btn_exp.setStyleSheet(
             "font-size:13px;font-weight:bold;padding:6px 12px;"
             "background:#43a047;color:white;border-radius:4px;")
@@ -588,156 +1048,21 @@ class DistortionGUI(QMainWindow):
         llo.addStretch()
         left_scroll.setWidget(left_panel)
 
-        # ---- Right: matplotlib canvas ----
-        right = self._build_canvas_tab("fig_ps", "canvas_ps", "tb_ps", "Pupil Swim")
-        splitter.addWidget(left_scroll)
-        splitter.addWidget(right)
-        splitter.setStretchFactor(1, 1)
-
-        lo = QHBoxLayout(w)
-        lo.setContentsMargins(0, 0, 0, 0)
-        lo.addWidget(splitter)
+        # ---- Right: canvas with Vectors / Heatmap tabs ----
+        canvas_vec = self._build_canvas_tab("fig_psv", "canvas_psv", "tb_psv", "Grid Vectors")
+        canvas_hm = self._build_canvas_tab("fig_psh", "canvas_psh", "tb_psh", "Heatmap")
+        self._right_tabs_ps = QTabWidget()
+        self._right_tabs_ps.addTab(canvas_vec, "  \u27A1\ufe0f " + self._t("grid_vectors") + "  ")
+        self._right_tabs_ps.addTab(canvas_hm, "  \U0001F321\ufe0f " + self._t("heatmap") + "  ")
+        lo.addWidget(left_scroll)
+        lo.addWidget(self._right_tabs_ps, 1)
         return w
 
-    # ---------- Tab 3: Distortion Correction ----------
-    def _build_tab_correction(self):
-        """Build Tab 3: polynomial fitting + svrapi_lens CSV export."""
-        w = QWidget()
-        splitter = QSplitter(Qt.Horizontal)
-
-        # ── Left: control panel ──
-        left_scroll = QScrollArea();         left_scroll.setWidgetResizable(True)
-        left_scroll.setMinimumWidth(400)
-        left_scroll.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Expanding)
-        left_panel = QWidget()
-        llo = QVBoxLayout(left_panel); llo.setSpacing(6)
-
-        # 1. Wavelength (R/G/B)
-        grp_wl = QGroupBox("1. Wavelength (R/G/B)")
-        wlay = QFormLayout(grp_wl); wlay.setVerticalSpacing(3)
-        self.cmb_corr_wl = []; self.chk_corr_wl = []; self.lbl_corr_nm = []
-        for lbl in ["R", "G", "B"]:
-            row = QHBoxLayout()
-            chk = QCheckBox(); chk.setChecked(True)
-            chk.setToolTip(f"Checked=use selected WL for {lbl}; unchecked=center WL")
-            self.chk_corr_wl.append(chk); row.addWidget(chk)
-            cmb = QComboBox(); cmb.setMinimumWidth(140)
-            cmb.addItem("(no SEQ)", None); self.cmb_corr_wl.append(cmb); row.addWidget(cmb)
-            nm = QLabel(""); nm.setMinimumWidth(55)
-            nm.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.lbl_corr_nm.append(nm); row.addWidget(nm)
-            wlay.addRow(f"  {lbl}:", row)
-        self.lbl_corr_center = QLabel("Center WL: (no SEQ)")
-        self.lbl_corr_center.setStyleSheet("color:#555;")
-        wlay.addRow(QLabel(""), self.lbl_corr_center)
-        llo.addWidget(grp_wl)
-
-        # 2. Trace params
-        grp_tr = QGroupBox("2. Trace Parameters")
-        trlay = QFormLayout(grp_tr); trlay.setVerticalSpacing(3)
-        self.cmb_corr_fovh = QComboBox(); self.cmb_corr_fovh.setEditable(True)
-        self.cmb_corr_fovh.setMinimumWidth(120)
-        self.cmb_corr_fovh.setToolTip("H half-FOV from XAN, editable")
-        trlay.addRow("H half-FOV (deg):", self.cmb_corr_fovh)
-        self.cmb_corr_fovv = QComboBox(); self.cmb_corr_fovv.setEditable(True)
-        self.cmb_corr_fovv.setMinimumWidth(120)
-        self.cmb_corr_fovv.setToolTip("V half-FOV from YAN, editable")
-        trlay.addRow("V half-FOV (deg):", self.cmb_corr_fovv)
-        self.cmb_corr_zoom = QComboBox(); self.cmb_corr_zoom.setMinimumWidth(150)
-        self.cmb_corr_zoom.addItem("(no SEQ)", 1)
-        trlay.addRow("Zoom:", self.cmb_corr_zoom)
-        self.dsb_corr_pw = QDoubleSpinBox(); self.dsb_corr_pw.setRange(0.01, 999)
-        self.dsb_corr_pw.setValue(11.904); self.dsb_corr_pw.setDecimals(3)
-        trlay.addRow("Panel half-W (mm):", self.dsb_corr_pw)
-        self.dsb_corr_ph = QDoubleSpinBox(); self.dsb_corr_ph.setRange(0.01, 999)
-        self.dsb_corr_ph.setValue(11.904); self.dsb_corr_ph.setDecimals(3)
-        trlay.addRow("Panel half-H (mm):", self.dsb_corr_ph)
-        self.sb_corr_gs = QSpinBox(); self.sb_corr_gs.setRange(3, 21)
-        self.sb_corr_gs.setValue(21)
-        trlay.addRow("Grid lines:", self.sb_corr_gs)
-        self.chk_corr_sym_h = QCheckBox("Horizontal symmetry (Y fit even-order)")
-        self.chk_corr_sym_h.setChecked(True)
-        self.chk_corr_sym_v = QCheckBox("Vertical symmetry (X fit even-order)")
-        self.chk_corr_sym_v.setChecked(False)
-        trlay.addRow("Symmetry:", self.chk_corr_sym_h)
-        trlay.addRow("", self.chk_corr_sym_v)
-        llo.addWidget(grp_tr)
-
-        # 3. Display panel
-        grp_disp = QGroupBox("3. Display Panel")
-        dplay = QFormLayout(grp_disp); dplay.setVerticalSpacing(3)
-        self.cmb_corr_brand = QComboBox(); self.cmb_corr_brand.setMinimumWidth(150)
-        self.cmb_corr_model = QComboBox(); self.cmb_corr_model.setMinimumWidth(150)
-        self.cmb_corr_brand.activated.connect(self._on_corr_brand_changed)
-        self.cmb_corr_model.activated.connect(self._on_corr_model_changed)
-        dplay.addRow("Brand:", self.cmb_corr_brand)
-        dplay.addRow("Model:", self.cmb_corr_model)
-
-        self.sb_corr_w0 = QSpinBox(); self.sb_corr_w0.setRange(1, 99999); self.sb_corr_w0.setValue(1920)
-        self.sb_corr_h0 = QSpinBox(); self.sb_corr_h0.setRange(1, 99999); self.sb_corr_h0.setValue(1080)
-        self.sb_corr_w = QSpinBox(); self.sb_corr_w.setRange(1, 99999); self.sb_corr_w.setValue(1920)
-        self.sb_corr_h = QSpinBox(); self.sb_corr_h.setRange(1, 99999); self.sb_corr_h.setValue(1080)
-        self.dsb_corr_px = QDoubleSpinBox(); self.dsb_corr_px.setRange(0.0001, 5.0)
-        self.dsb_corr_px.setValue(0.00756); self.dsb_corr_px.setDecimals(6)
-        self.sb_corr_cols = QSpinBox(); self.sb_corr_cols.setRange(3, 101); self.sb_corr_cols.setValue(17)
-        self.sb_corr_rows = QSpinBox(); self.sb_corr_rows.setRange(3, 101); self.sb_corr_rows.setValue(9)
-        self.dsb_corr_ox = QDoubleSpinBox(); self.dsb_corr_ox.setRange(-9999, 9999); self.dsb_corr_ox.setValue(0); self.dsb_corr_ox.setDecimals(3)
-        self.dsb_corr_oy = QDoubleSpinBox(); self.dsb_corr_oy.setRange(-9999, 9999); self.dsb_corr_oy.setValue(0); self.dsb_corr_oy.setDecimals(3)
-
-        dplay.addRow("Active W (px):", self.sb_corr_w0)
-        dplay.addRow("Active H (px):", self.sb_corr_h0)
-        dplay.addRow("Pre-correction W (px):", self.sb_corr_w)
-        dplay.addRow("Pre-correction H (px):", self.sb_corr_h)
-        dplay.addRow("Pixel size (mm/px):", self.dsb_corr_px)
-        dplay.addRow("NumCols:", self.sb_corr_cols)
-        dplay.addRow("NumRows:", self.sb_corr_rows)
-        dplay.addRow("Offset X (px):", self.dsb_corr_ox)
-        dplay.addRow("Offset Y (px):", self.dsb_corr_oy)
-        llo.addWidget(grp_disp)
-
-        # 4. Manual load
-        grp_load = QGroupBox("4. Manual Load (skip CODE V)")
-        gload = QHBoxLayout(grp_load)
-        self.le_corr_dir = QLineEdit(); self.le_corr_dir.setPlaceholderText("Directory with r/g/b.txt")
-        btn_ld = QPushButton("Browse..."); btn_ld.clicked.connect(self._browse_corr_dir)
-        gload.addWidget(self.le_corr_dir); gload.addWidget(btn_ld)
-        llo.addWidget(grp_load)
-
-        # Buttons
-        btn_row = QHBoxLayout()
-        def _b(text, color, slot):
-            b = QPushButton(text); b.setMinimumHeight(32)
-            b.setStyleSheet(f"font-weight:bold;background:{color};color:white;border-radius:3px;padding:4px 8px;")
-            b.clicked.connect(slot); return b
-        self._btn_corr_run = _b("CODE V Calc", "#1565C0", self._run_correction_codev)
-        btn_row.addWidget(self._btn_corr_run)
-        self._btn_corr_fit = _b("Fit Only", "#2E7D32", self._run_correction_fit_only)
-        btn_row.addWidget(self._btn_corr_fit)
-        self._btn_corr_export = _b("Export CSV", "#6A1B9A", self._export_correction_csv)
-        btn_row.addWidget(self._btn_corr_export)
-        llo.addLayout(btn_row)
-
-        llo.addStretch()
-        left_scroll.setWidget(left_panel)
-
-        # ── Right: matplotlib canvas ──
-        right = self._build_canvas_tab("fig_corr", "canvas_corr", "tb_corr", "Distortion Grid")
-        right_tabs = QTabWidget()
-        right_tabs.addTab(right, "Distortion Grid")
-
-        splitter.addWidget(left_scroll)
-        splitter.addWidget(right_tabs)
-        splitter.setStretchFactor(1, 1)
-
-        lo = QHBoxLayout(w); lo.setContentsMargins(0, 0, 0, 0)
-        lo.addWidget(splitter)
-        return w
-
+    # === Canvas builder (matplotlib tabs) ===
     def _build_canvas_tab(self, fig_attr, canvas_attr, toolbar_attr, title):
         """Build a single matplotlib canvas tab (in-tab embedding, not popup)."""
         _init_mpl()
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-        from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
         from matplotlib.figure import Figure
 
         tab = QWidget()
@@ -745,11 +1070,9 @@ class DistortionGUI(QMainWindow):
         fig = Figure(figsize=(8, 6))
         canvas = FigureCanvas(fig)
         canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        tb = NavigationToolbar(canvas, tab)
-        tl.addWidget(tb); tl.addWidget(canvas)
+        tl.addWidget(canvas)
         setattr(self, fig_attr, fig)
         setattr(self, canvas_attr, canvas)
-        setattr(self, toolbar_attr, tb)
         return tab
 
     def _load_displays_db(self):
@@ -759,21 +1082,21 @@ class DistortionGUI(QMainWindow):
         self._displays_db = load_displays_db(db_path)
         brands = sorted(set(d["brand"] for d in self._displays_db))
         self.cmb_corr_brand.clear()
-        self.cmb_corr_brand.addItem("(manual)", None)
+        self.cmb_corr_brand.addItem(self._t("manual"), None)
         for b in brands:
             self.cmb_corr_brand.addItem(b, b)
         self.cmb_corr_model.clear()
-        self.cmb_corr_model.addItem("(manual)", -1)
+        self.cmb_corr_model.addItem(self._t("manual"), -1)
 
     def _on_corr_brand_changed(self, idx):
         self.cmb_corr_model.clear()
         brand = self.cmb_corr_brand.currentData()
         if brand is None:
-            self.cmb_corr_model.addItem("(manual)", -1)
+            self.cmb_corr_model.addItem(self._t("manual"), -1)
         else:
             items = sorted((d for d in self._displays_db if d["brand"] == brand),
                            key=lambda d: d["model"])
-            self.cmb_corr_model.addItem("Select model...", -1)
+            self.cmb_corr_model.addItem(self._t("select_model"), -1)
             for d in items:
                 sz = f'{d["size"]}" ' if d["size"] > 0 else ""
                 idx_db = self._displays_db.index(d)
@@ -794,147 +1117,111 @@ class DistortionGUI(QMainWindow):
         self.dsb_corr_pw.setValue(pw)
         self.dsb_corr_ph.setValue(ph)
 
-    def _browse_corr_dir(self):
-        d = QFileDialog.getExistingDirectory(self, "Select txt directory")
-        if d:
-            self.le_corr_dir.setText(d)
+    # ========== Correction: source mode ==========
+    def _on_corr_src_changed(self, btn):
+        """Toggle CODE V / TXT source mode UI."""
+        is_txt = (self.bg_corr_src.id(btn) == 1)
+        self._corr_txt_rows_set_visible(is_txt)
+        if is_txt:
+            self._btn_corr_fit.setText("  \U0001F9EE " + self._t("fit_from_txt") + "  ")
+        else:
+            self._btn_corr_fit.setText("  \U0001F9EE " + self._t("fit_correction") + "  ")
+
+    def _corr_txt_rows_set_visible(self, vis):
+        for _, ed, btn, _ in self._corr_txt_collect:
+            ed.setVisible(vis)
+            btn.setVisible(vis)
+        # Also show/hide labels (first item's label)
+        for lbl, _, _, _ in self._corr_txt_collect:
+            lbl.setVisible(vis)
+
+    def _browse_corr_txt(self, channel):
+        """Browse for a single R/G/B TXT file."""
+        ch_idx = {"R": 0, "G": 1, "B": 2}[channel]
+        _, ed, _, _ = self._corr_txt_collect[ch_idx]
+        current = ed.text().strip()
+        if current and Path(current).parent.is_dir():
+            start_dir = str(Path(current).parent)
+        else:
+            start_dir = str(Path(self.ed_seq.text().strip()).parent) if Path(self.ed_seq.text().strip()).is_file() else ""
+        f, _ = QFileDialog.getOpenFileName(self, f"{self._t('open_txt_title')} {channel}.txt",
+                                            start_dir, "TXT files (*.txt)")
+        if f:
+            ed.setText(f)
+
+    def _on_fit_correction(self):
+        """Fit correction: route to CODE V or TXT mode."""
+        if self.rb_corr_txt.isChecked():
+            self._run_correction_fit_only()
+        else:
+            self._run_correction_codev()
 
     # ========== Correction: populate SEQ info ==========
     def _populate_corr_seq_info(self):
-        """Populate correction tab widgets from loaded SEQ data."""
+        """Extract wavelengths/zoom info from SEQ for correction section."""
         from distortion_analyzer import DistortionAnalyzer
         seq = self.ed_seq.text().strip()
         if not Path(seq).is_file():
             return
 
-        try:
-            num_zooms = DistortionAnalyzer.get_zoom_count_from_seq(seq)
-            zoom_names = DistortionAnalyzer.get_zoom_names_from_seq(seq)
-        except Exception:
-            num_zooms = 1; zoom_names = {}
-
-        # Zoom
-        self.cmb_corr_zoom.clear()
-        for zid in range(1, num_zooms + 1):
-            name = zoom_names.get(zid, '')
-            label = f"Z{zid}: {name}" if name else f"Z{zid}"
-            self.cmb_corr_zoom.addItem(label, zid)
-
-        # Wavelengths
+        # Store wavelengths for correction (R=longest, G=center, B=shortest)
         try:
             wl_info = DistortionAnalyzer.get_wavelengths_from_seq(seq)
             wavelengths = wl_info['wavelengths']
             ref_idx = wl_info['ref_index']
-            ref_nm = wavelengths[ref_idx - 1] if ref_idx <= len(wavelengths) else wavelengths[0]
-            self.lbl_corr_center.setText(f"Center WL: WL[{ref_idx}] = {ref_nm:.1f}nm")
         except Exception:
-            wavelengths = [625.0]; ref_idx = 1; ref_nm = 625.0
-            self.lbl_corr_center.setText("Center WL: (unknown)")
+            wavelengths = [625.0]; ref_idx = 1
 
-        for cmb in self.cmb_corr_wl:
-            cmb.clear()
-        for i, cmb in enumerate(self.cmb_corr_wl):
-            for wi, v in enumerate(wavelengths):
-                cmb.addItem(f"WL[{wi+1}] = {v:.1f}nm", wi + 1)
-            # Defaults: R->longest, G->center, B->shortest
-            if len(wavelengths) >= 3:
-                defaults = {0: max(wavelengths), 1: ref_nm, 2: min(wavelengths)}
-                target = defaults.get(i, ref_nm)
-                for j, v in enumerate(wavelengths):
-                    if abs(v - target) < 1.0:
-                        cmb.setCurrentIndex(j); break
-            elif cmb.count() > 1:
-                cmb.setCurrentIndex(min(ref_idx - 1, cmb.count() - 1))
-            # Update nm label
-            cd = cmb.currentData()
-            if cd is not None and cd <= len(wavelengths):
-                self.lbl_corr_nm[i].setText(f"{wavelengths[cd - 1]:.1f}nm")
-            else:
-                self.lbl_corr_nm[i].setText("")
+        self._corr_wavelengths = wavelengths
+        self._corr_ref_idx = ref_idx
 
-        # Connect combobox change -> update labels
-        for i, cmb in enumerate(self.cmb_corr_wl):
-            try: cmb.currentIndexChanged.disconnect()
-            except Exception: pass
-        def _make_updater(idx):
-            return lambda: self._update_corr_wl_label(idx)
-        for i, cmb in enumerate(self.cmb_corr_wl):
-            cmb.currentIndexChanged.connect(_make_updater(i))
-
-        # FOV
-        try:
-            fov_info = DistortionAnalyzer.get_fov_from_seq(seq)
-            x_fov, y_fov = fov_info['x_max'], fov_info['y_max']
-        except Exception:
-            x_fov, y_fov = 26.565, 26.565
-
-        self.cmb_corr_fovh.clear()
-        self.cmb_corr_fovv.clear()
-        if x_fov > 0:
-            self.cmb_corr_fovh.addItem(f"{x_fov:.4f}", x_fov)
-            self.cmb_corr_fovh.setCurrentIndex(0)
-        if y_fov > 0:
-            self.cmb_corr_fovv.addItem(f"{y_fov:.4f}", y_fov)
-            self.cmb_corr_fovv.setCurrentIndex(0)
-
-    def _update_corr_wl_label(self, idx):
-        cmb = self.cmb_corr_wl[idx]
-        txt = cmb.currentText()
-        if "=" in txt:
-            self.lbl_corr_nm[idx].setText(txt.split("=")[-1].strip())
+        # Derive R/G/B wavelength indices
+        if len(wavelengths) >= 3:
+            wl_vals = [(i+1, v) for i, v in enumerate(wavelengths)]
+            self._corr_wl_r = max(wl_vals, key=lambda x: x[1])[0]
+            self._corr_wl_g = ref_idx
+            self._corr_wl_b = min(wl_vals, key=lambda x: x[1])[0]
         else:
-            self.lbl_corr_nm[idx].setText(txt)
+            self._corr_wl_r = ref_idx
+            self._corr_wl_g = ref_idx
+            self._corr_wl_b = ref_idx
 
     # ========== Correction: handlers ==========
     def _run_correction_codev(self) -> None:
+        """Run CODE V R/G/B trace + polynomial fitting (using Tab 1 controls)."""
         seq = self.ed_seq.text().strip()
         if not Path(seq).is_file():
-            QMessageBox.warning(self, "Error", "Select a valid .seq file"); return
+            QMessageBox.warning(self, self._t("error_title"), self._t("select_valid_seq")); return
 
-        wl_sel = [cmb.currentData() for cmb in self.cmb_corr_wl]
-        if any(v is None for v in wl_sel):
-            QMessageBox.warning(self, "Error", "Load a SEQ file first"); return
+        # R/G/B wavelength indices (auto-derived from SEQ)
+        if not hasattr(self, '_corr_wl_g') or self._corr_wl_g is None:
+            QMessageBox.warning(self, self._t("error_title"), self._t("load_seq_first")); return
+        wl_eff = [self._corr_wl_r, self._corr_wl_g, self._corr_wl_b]
 
-        center_text = self.lbl_corr_center.text()
-        center_wl = wl_sel[1]
-        if "WL[" in center_text:
-            try:
-                center_wl = int(center_text.split("WL[")[1].split("]")[0])
-            except (ValueError, IndexError):
-                pass
+        # FOV from Tab 1 shared spinners
+        halfx = self.sp_fovx_g.value()
+        halfy = self.sp_fovy_g.value()
 
-        wl_eff = []
-        for i in range(3):
-            if self.chk_corr_wl[i].isChecked():
-                wl_eff.append(wl_sel[i])
-            else:
-                wl_eff.append(center_wl)
+        # Zoom: from Correction section's own combo
+        zoom = self.cmb_corr_zoom.currentData()
+        if zoom is None:
+            zoom = 1
 
-        try:
-            halfx = self.cmb_corr_fovh.currentData()
-            halfy = self.cmb_corr_fovv.currentData()
-            if halfx is None: halfx = float(self.cmb_corr_fovh.currentText())
-            if halfy is None: halfy = float(self.cmb_corr_fovv.currentText())
-        except (ValueError, TypeError):
-            QMessageBox.warning(self, "Error", "Invalid FOV value"); return
-
-        zoom = self.cmb_corr_zoom.currentData() or 1
         macro = str(Path(__file__).parent / "dist_real_pro.seq")
 
         self._log("=" * 50)
-        self._log(f"Correction CODE V: {Path(seq).name}")
-        labels = ["R", "G", "B"]
-        self._log(f"WL: {', '.join(f'{labels[i]}:WL[{wl_eff[i]}]' for i in range(3))}")
-        self._log(f"FOV H={halfx:.3f} V={halfy:.3f} Zoom={zoom} N={self.sb_corr_gs.value()}")
+        self._log(f"Correction: {Path(seq).name}")
+        self._log(f"R/G/B WL indices: {wl_eff}")
+        self._log(f"FOV H={halfx:.3f} V={halfy:.3f} Zoom={zoom} N={self.sp_gs_g.value()}")
 
-        self._btn_corr_run.setEnabled(False)
         self._btn_corr_fit.setEnabled(False)
+        self._btn_corr_export.setEnabled(False)
         self.bar.setRange(0, 0)
 
         self._corr_worker = CorrectionWorker(
             seq, halfx, halfy,
             self.dsb_corr_pw.value(), self.dsb_corr_ph.value(),
-            zoom, self.sb_corr_gs.value(), wl_eff, macro)
+            zoom, self.sp_gs_g.value(), wl_eff, macro)
         self._corr_thread = QThread()
         self._corr_worker.moveToThread(self._corr_thread)
         self._corr_worker.progress.connect(self._log)
@@ -944,43 +1231,62 @@ class DistortionGUI(QMainWindow):
         self._corr_thread.start()
 
     def _on_correction_done(self, work_dir, err):
-        self._btn_corr_run.setEnabled(True)
         self._btn_corr_fit.setEnabled(True)
+        self._btn_corr_export.setEnabled(True)
         self.bar.setRange(0, 1)
         if err:
             self._log(f"[Correction Error] {err}")
             QMessageBox.critical(self, "CODE V Error", err[:500])
             return
         self._corr_work_dir = work_dir
-        self.le_corr_dir.setText(work_dir)
-        self._run_correction_fit(work_dir)
+        paths = {c: str(Path(work_dir) / f"{c}.txt") for c in ["r", "g", "b"]}
+        self._run_correction_fit(paths)
 
     def _run_correction_fit_only(self):
-        ld = self.le_corr_dir.text().strip()
-        if not ld:
-            seq = self.ed_seq.text().strip()
-            if Path(seq).is_file():
-                ld = str(Path(seq).parent)
-            else:
-                QMessageBox.warning(self, "Error", "Specify txt directory or load SEQ first"); return
-        self._corr_work_dir = ld
-        self._run_correction_fit(ld)
+        """Read R/G/B TXT files (missing filled with G>R>B priority)."""
+        paths = {}
+        for ch_idx, ch in enumerate(["R", "G", "B"]):
+            _, ed, _, _ = self._corr_txt_collect[ch_idx]
+            p = ed.text().strip()
+            if p and Path(p).is_file():
+                paths[ch.lower()] = p
+        if not paths:
+            QMessageBox.warning(self, self._t("error_title"), self._t("select_txt_file"))
+            return
+        self._run_correction_fit(paths)
 
-    def _run_correction_fit(self, work_dir):
+    def _run_correction_fit(self, paths):
         from distortion_correction import parse_dist_txt, fit_distortion, build_csv_content
-        self._log(f"Reading txt: {work_dir}")
+        self._log(f"Reading txt: {list(paths.keys())}")
         try:
-            paths = {c: str(Path(work_dir) / f"{c}.txt") for c in ["r", "g", "b"]}
-            for p in paths.values():
-                if not Path(p).is_file():
-                    raise FileNotFoundError(f"Not found: {p}")
+            # Parse available files
+            data = {}  # {'r': ndarray, 'g': ndarray, 'b': ndarray}
+            for ch in ["r", "g", "b"]:
+                if ch in paths and Path(paths[ch]).is_file():
+                    data[ch] = parse_dist_txt(paths[ch])
+                    self._log(f"  Loaded {ch}.txt: {len(data[ch])} points")
+                else:
+                    self._log(f"  {ch}.txt: not found")
 
-            rd = parse_dist_txt(paths["r"])
-            gd = parse_dist_txt(paths["g"])
-            bd = parse_dist_txt(paths["b"])
-            self._log(f"Data points: R={len(rd)}, G={len(gd)}, B={len(bd)}")
+            if not data:
+                raise FileNotFoundError("No TXT data loaded")
 
-            disdata = np.stack([rd, gd, bd], axis=2)
+            # Fill missing channels with priority: G > R > B
+            for ch in ["r", "g", "b"]:
+                if ch not in data:
+                    for src in ["g", "r", "b"]:  # G first, then R, then B
+                        if src in data:
+                            data[ch] = data[src].copy()
+                            self._log(f"  {ch}.txt: filled from {src}.txt")
+                            break
+
+            self._log(f"Data points: R={len(data['r'])}, G={len(data['g'])}, B={len(data['b'])}")
+            if len(data['r']) == 0 or len(data['g']) == 0 or len(data['b']) == 0:
+                raise ValueError("R/G/B trace files must contain data")
+            if not (len(data['r']) == len(data['g']) == len(data['b'])):
+                raise ValueError("R/G/B trace files have mismatched point counts")
+
+            disdata = np.stack([data['r'], data['g'], data['b']], axis=2)
             p = self._corr_params()
 
             self._log("Fitting...")
@@ -1014,11 +1320,12 @@ class DistortionGUI(QMainWindow):
 
             self._log("Fitting done. Drawing...")
             self._draw_correction_grid()
+            self._right_tabs.setCurrentIndex(1)  # switch to Correction canvas
             self._log("Done! Click 'Export CSV' to save.")
 
         except Exception as e:
             self._log(f"[Fit Error] {e}\n{traceback.format_exc()}")
-            QMessageBox.critical(self, "Fit Error", str(e))
+            QMessageBox.critical(self, self._t("fit_error_title"), str(e))
 
     def _corr_params(self) -> dict:
         return dict(
@@ -1085,29 +1392,128 @@ class DistortionGUI(QMainWindow):
 
     def _export_correction_csv(self):
         if not hasattr(self, '_corr_csv_str') or not self._corr_csv_str:
-            QMessageBox.warning(self, "Hint", "Run fit first before exporting"); return
+            QMessageBox.warning(self, self._t("hint_title"), self._t("run_fit_first")); return
 
         wd = self._corr_work_dir if hasattr(self, '_corr_work_dir') and self._corr_work_dir else ""
         default = str(Path(wd) / "svrapi_lens_left.csv") if wd else ""
-        path, _ = QFileDialog.getSaveFileName(self, "Export CSV (left)", default,
+        path, _ = QFileDialog.getSaveFileName(self, self._t("export_csv_save_title"), default,
                                                "CSV (*.csv);;All (*)")
         if not path: return
 
         Path(path).write_text(self._corr_csv_str, newline='')
-        right_path = path.replace("_left.csv", "_right.csv")
+        base = Path(path)
+        if base.name.lower().endswith('_left.csv'):
+            right_path = base.with_name(base.name[:-9] + '_right.csv')
+        elif base.suffix.lower() == '.csv':
+            right_path = base.with_name(base.stem + '_right.csv')
+        else:
+            right_path = Path(str(base) + '_right.csv')
+
         Path(right_path).write_text(self._corr_csv_str, newline='')
 
         self._log(f"CSV saved: {path}")
         self._log(f"           {right_path}")
-        QMessageBox.information(self, "Saved", f"Saved:\n{path}\n{right_path}")
+        QMessageBox.information(self, self._t("saved_title"),
+                                self._t("saved_message").format(path=f"{path}\n{right_path}"))
 
-    # ========== File Browsers ==========
+    # ========== File Browsers & Settings ==========
+    def _show_settings(self):
+        dlg = SettingsDialog(self)
+        dlg.exec_()
+
+    def _t(self, key):
+        return I18N[_current_lang].get(key, key)
+
+    def _refresh_ui_language(self):
+        """Update all UI labels to current language immediately."""
+        self.setWindowTitle(self._t("app_title"))
+        self.tabs.setTabText(0, "  \U0001F4CF " + self._t("tab_distortion") + "  ")
+        self.tabs.setTabText(1, "  \U0001F441 " + self._t("tab_pupil_swim") + "  ")
+        for widget, method, key, fmt_args, template in self._localized_widgets:
+            text = self._t(key)
+            if template is not None:
+                text = template.format(label=text, **(fmt_args or {}))
+            elif fmt_args is not None:
+                text = text.format(**fmt_args)
+            getattr(widget, method)(text)
+        if hasattr(self, '_btn_settings'):
+            self._btn_settings.setText("  \u2699\uFE0F " + self._t("settings") + "  ")
+        if hasattr(self, '_btn_sa_g'):
+            self._btn_sa_g.setText(self._t("select_all"))
+        if hasattr(self, '_btn_cl_g'):
+            self._btn_cl_g.setText(self._t("clear"))
+        if hasattr(self, '_right_tabs'):
+            self._right_tabs.setTabText(0, "  \U0001F4CF " + self._t("tab_distortion") + "  ")
+            self._right_tabs.setTabText(1, "  \U0001F441 " + self._t("tab_pupil_swim") + "  ")
+        if hasattr(self, '_right_tabs_ps'):
+            self._right_tabs_ps.setTabText(0, "  \u27A1\ufe0f " + self._t("grid_vectors") + "  ")
+            self._right_tabs_ps.setTabText(1, "  \U0001F321\ufe0f " + self._t("heatmap") + "  ")
+        if hasattr(self, 'chk_zoom'):
+            def preserve_suffix(old_text, new_prefix):
+                if old_text.startswith(new_prefix):
+                    return old_text[len(new_prefix):]
+                if ' ' in old_text:
+                    return old_text[old_text.index(' '):]
+                return ''
+
+            for zid, chk in self.chk_zoom.items():
+                if chk is None:
+                    continue
+                prefix = I18N[_current_lang]["zoom_item"].format(id=zid)
+                suffix = preserve_suffix(chk.text(), prefix)
+                chk.setText(prefix + suffix)
+                chk.setToolTip(I18N[_current_lang]["zoom_tooltip"].format(id=zid))
+        if hasattr(self, 'cmb_corr_zoom') and self.cmb_corr_zoom is not None:
+            sel = self.cmb_corr_zoom.currentData()
+            old_items = [self.cmb_corr_zoom.itemText(i) for i in range(self.cmb_corr_zoom.count())]
+            self.cmb_corr_zoom.clear()
+            count = len(self.chk_zoom)
+            for zid in range(1, count + 1):
+                prefix = I18N[_current_lang]["zoom_item"].format(id=zid)
+                suffix = ''
+                if zid - 1 < len(old_items):
+                    suffix = preserve_suffix(old_items[zid - 1], prefix)
+                self.cmb_corr_zoom.addItem(prefix + suffix, zid)
+            if sel is not None:
+                idx = self.cmb_corr_zoom.findData(sel)
+                if idx >= 0:
+                    self.cmb_corr_zoom.setCurrentIndex(idx)
+        if hasattr(self, 'cb_ref') and hasattr(self, 'cb_tgt'):
+            ref_sel = self.cb_ref.currentData()
+            tgt_sel = self.cb_tgt.currentData()
+            old_ref_items = [self.cb_ref.itemText(i) for i in range(self.cb_ref.count())]
+            old_tgt_items = [self.cb_tgt.itemText(i) for i in range(self.cb_tgt.count())]
+            count = len(self.chk_zoom)
+            self.cb_ref.clear(); self.cb_tgt.clear()
+            for z in range(1, count + 1):
+                prefix = I18N[_current_lang]["zoom_item"].format(id=z)
+                ref_suffix = preserve_suffix(old_ref_items[z - 1], prefix) if z - 1 < len(old_ref_items) else ''
+                tgt_suffix = preserve_suffix(old_tgt_items[z - 1], prefix) if z - 1 < len(old_tgt_items) else ''
+                self.cb_ref.addItem(prefix + ref_suffix, userData=z)
+                self.cb_tgt.addItem(prefix + tgt_suffix, userData=z)
+            if ref_sel is not None:
+                idx = self.cb_ref.findData(ref_sel)
+                if idx >= 0:
+                    self.cb_ref.setCurrentIndex(idx)
+            if tgt_sel is not None:
+                idx = self.cb_tgt.findData(tgt_sel)
+                if idx >= 0:
+                    self.cb_tgt.setCurrentIndex(idx)
+        if hasattr(self, '_wl_info') and self._wl_info and hasattr(self, 'cb_wl_g'):
+            ref_idx = self._wl_info.get('ref_index', 1)
+            wavelengths = self._wl_info.get('wavelengths', [])
+            for i, wl in enumerate(wavelengths):
+                ref = I18N[_current_lang]["ref_tag"] if i + 1 == ref_idx else ''
+                self.cb_wl_g.setItemText(i, I18N[_current_lang]["wavelength_item"].format(id=i+1, wl=wl, ref=ref))
+        self.setStatusTip(self._t("status_tip"))
+
     def _browse_seq(self):
-        p, _ = QFileDialog.getOpenFileName(self, "Open SEQ", "", "SEQ (*.seq);;All (*)")
+        p, _ = QFileDialog.getOpenFileName(self, self._t("open_seq_title"), "", "SEQ (*.seq);;All (*)")
         if p:
             self.ed_seq.setText(p)
             self._load_wavelengths(p)
             self._populate_corr_seq_info()
+            self._loaded_seq_path = p
             # Auto-set output dir to {program_root}/{lens_name}/
             lens_name = Path(p).stem
             out_dir = str(Path(__file__).parent / lens_name)
@@ -1117,7 +1523,7 @@ class DistortionGUI(QMainWindow):
 
     def _browse_out(self, prefix: str):
         """Unified output dir browser for both tabs."""
-        p = QFileDialog.getExistingDirectory(self, "Output Dir")
+        p = QFileDialog.getExistingDirectory(self, self._t("browse_output_dir"))
         if p:
             getattr(self, f'ed_out_{prefix}').setText(p)
 
@@ -1150,7 +1556,8 @@ class DistortionGUI(QMainWindow):
             # Populate wavelength combo
             self.cb_wl_g.clear()
             for i, wl in enumerate(wavelengths):
-                label = f"W{i+1}: {wl:.1f}nm {'(REF)' if i+1 == ref_idx else ''}"
+                ref_text = I18N[_current_lang]["ref_tag"] if i + 1 == ref_idx else ''
+                label = I18N[_current_lang]["wavelength_item"].format(id=i+1, wl=wl, ref=ref_text)
                 self.cb_wl_g.addItem(label, userData=i+1)
             if 1 <= ref_idx <= self.cb_wl_g.count():
                 self.cb_wl_g.setCurrentIndex(ref_idx - 1)
@@ -1160,11 +1567,14 @@ class DistortionGUI(QMainWindow):
             self.sp_fovy_g.setValue(y_fov)
             self.sp_fovx_ps.setValue(x_fov)
             self.sp_fovy_ps.setValue(y_fov)
+            self._loaded_seq_path = seq_path
         except Exception as e:
             self._log(f"Warning: could not read wavelengths/FOV: {e}")
             self.cb_wl_g.clear()
-            self.cb_wl_g.addItem("W1: 625.0nm (REF)", userData=1)
+            label = I18N[_current_lang]["wavelength_item"].format(id=1, wl=625.0, ref=I18N[_current_lang]["ref_tag"])
+            self.cb_wl_g.addItem(label, userData=1)
             self._wl_info = {'wavelengths': [625.0], 'ref_index': 1}
+            self._loaded_seq_path = seq_path
 
     def _rebuild_zoom_checkboxes(self, num_zooms: int,
                                   zoom_names: dict = None):
@@ -1181,9 +1591,9 @@ class DistortionGUI(QMainWindow):
         self.chk_zoom.clear()
         for zid in range(1, num_zooms + 1):
             name = zoom_names.get(zid, '')
-            label = f"Z{zid} {name}" if name else f"Z{zid}"
+            label = I18N[_current_lang]["zoom_item_with_name"].format(id=zid, name=name) if name else I18N[_current_lang]["zoom_item"].format(id=zid)
             ch = QCheckBox(label)
-            ch.setToolTip(name if name else f"Zoom {zid}")
+            ch.setToolTip(name if name else I18N[_current_lang]["zoom_tooltip"].format(id=zid))
             self.chk_zoom[zid] = ch
             r, c = divmod(zid - 1, 4)
             self._zl_grid.addWidget(ch, r, c)
@@ -1194,14 +1604,28 @@ class DistortionGUI(QMainWindow):
 
         # Recreate Select All / Clear buttons fresh each time
         num_rows = (num_zooms - 1) // 4 + 1
-        self._btn_sa_g = QPushButton("Select All")
-        self._btn_cl_g = QPushButton("Clear")
+        self._btn_sa_g = QPushButton(self._t("select_all"))
+        self._btn_cl_g = QPushButton(self._t("clear"))
         self._btn_sa_g.clicked.connect(
             lambda: [c.setChecked(True) for c in self.chk_zoom.values()])
         self._btn_cl_g.clicked.connect(
             lambda: [c.setChecked(False) for c in self.chk_zoom.values()])
         self._zl_grid.addWidget(self._btn_sa_g, num_rows, 0)
         self._zl_grid.addWidget(self._btn_cl_g, num_rows, 1)
+
+        # Also rebuild the Correction section zoom combo (if created)
+        if self.cmb_corr_zoom is not None:
+            self.cmb_corr_zoom.blockSignals(True)
+            try:
+                self.cmb_corr_zoom.clear()
+                for zid in range(1, num_zooms + 1):
+                    name = zoom_names.get(zid, '')
+                    text = I18N[_current_lang]["zoom_item_with_name"].format(id=zid, name=name) if name else I18N[_current_lang]["zoom_item"].format(id=zid)
+                    self.cmb_corr_zoom.addItem(text, zid)
+                if num_zooms >= 1:
+                    self.cmb_corr_zoom.setCurrentIndex(0)
+            finally:
+                self.cmb_corr_zoom.blockSignals(False)
 
     def _rebuild_ps_zoom_combos(self, num_zooms: int,
                                  zoom_names: dict = None):
@@ -1215,7 +1639,7 @@ class DistortionGUI(QMainWindow):
             self.cb_tgt.clear()
             for z in range(1, num_zooms + 1):
                 name = zoom_names.get(z, '')
-                label = f"Z{z} {name}" if name else f"Z{z}"
+                label = I18N[_current_lang]["zoom_item_with_name"].format(id=z, name=name) if name else I18N[_current_lang]["zoom_item"].format(id=z)
                 self.cb_ref.addItem(label, userData=z)
                 self.cb_tgt.addItem(label, userData=z)
             # sensible defaults
@@ -1259,21 +1683,16 @@ class DistortionGUI(QMainWindow):
     def _on_run(self) -> None:
         seq = self.ed_seq.text().strip()
         if not Path(seq).is_file():
-            QMessageBox.warning(self, "Error", f"SEQ not found:\n{seq}")
+            QMessageBox.warning(self, self._t("error_title"), self._t("seq_not_found").format(seq=seq))
             return
 
         idx = self.tabs.currentIndex()
-
-        if idx == 2:
-            # === Correction tab: delegate to its own handler ===
-            self._run_correction_codev()
-            return
 
         if idx == 0:
             # === Distortion Grid mode ===
             zooms = [z for z, ch in self.chk_zoom.items() if ch.isChecked()]
             if not zooms:
-                QMessageBox.warning(self, "Hint", "Select at least 1 Zoom position")
+                QMessageBox.warning(self, self._t("hint_title"), self._t("select_at_least_one_zoom"))
                 return
             wl_mode = 'multi' if self.rb_multi.isChecked() else 'single'
             wl_idx = self.cb_wl_g.currentData() or 1
@@ -1293,7 +1712,7 @@ class DistortionGUI(QMainWindow):
             ref_id = self.cb_ref.currentData() or 2
             tgt_id = self.cb_tgt.currentData() or 5
             if ref_id == tgt_id:
-                QMessageBox.warning(self, "Hint", "Ref and Target must be different")
+                QMessageBox.warning(self, self._t("hint_title"), self._t("ref_target_different"))
                 return
             cfg = dict(
                 mode='pupil_swim',
@@ -1310,8 +1729,13 @@ class DistortionGUI(QMainWindow):
         cfg['iqr_enabled'] = chk_iqr.isChecked()
         cfg['iqr_factor'] = sp_iqr.value()
 
+        if self._loaded_seq_path != seq:
+            self._load_wavelengths(seq)
+            self._populate_corr_seq_info()
+
         # Disable the correct Start button
-        tab_idx = self.tabs.currentIndex()
+        self._active_run_tab = self.tabs.currentIndex()
+        tab_idx = self._active_run_tab
         if tab_idx == 0:
             self._btn_run_g.setEnabled(False)
         elif tab_idx == 1:
@@ -1331,41 +1755,55 @@ class DistortionGUI(QMainWindow):
         self._on_run()
 
     def _on_export_tab(self, tab_index: int) -> None:
-        """Called by Export PNG buttons inside Tab 1/2; saves the in-tab canvas figure."""
-        fig_map = {0: getattr(self, 'fig_g', None), 1: getattr(self, 'fig_ps', None)}
-        fig = fig_map.get(tab_index)
-        if fig is None:
-            QMessageBox.information(self, "Hint", "Run analysis first")
+        """Called by Export PNG buttons inside Tab 1/2; saves the in-tab canvas figure(s)."""
+        if self.result is None:
+            QMessageBox.information(self, self._t("hint_title"), self._t("run_analysis_first"))
             return
-        out_dir = self.ed_out_g.text().strip() if tab_index == 0 else self.ed_out_ps.text().strip()
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-        mode = self.result.get('mode', 'grid') if self.result else 'grid'
         if tab_index == 0:
-            wl_mode = self.result.get('wl_mode', 'single') if self.result else 'single'
-            wl_val = list(self.result['results'].values())[0].get('wavelength', 625) if self.result and self.result.get('results') else 625
+            out_dir = self.ed_out_g.text().strip()
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+            wl_mode = self.result.get('wl_mode', 'single')
+            wl_val = list(self.result['results'].values())[0].get('wavelength', 625) if self.result.get('results') else 625
             fname = f"distortion_grid_{wl_val:.0f}nm.png" if wl_mode == 'single' else "distortion_grid_multi.png"
+            path = str(Path(out_dir) / fname)
+            try:
+                self.fig_g.savefig(path, dpi=200, bbox_inches='tight')
+                self._log(f"Exported: {path}")
+                QMessageBox.information(self, self._t("saved_title"), self._t("saved_message").format(path=path))
+            except Exception as e:
+                self._log(f"Export error: {e}")
+                QMessageBox.warning(self, self._t("error_title"), str(e))
         else:
-            ref_id = self.result.get('ref_id', 2) if self.result else 2
-            tgt_id = self.result.get('tgt_id', 5) if self.result else 5
-            fname = f"ps_results_Z{ref_id}_Z{tgt_id}.png"
-        path = str(Path(out_dir) / fname)
-        try:
-            fig.savefig(path, dpi=200, bbox_inches='tight')
-            self._log(f"Exported: {path}")
-            QMessageBox.information(self, "Saved", f"Saved to:\n{path}")
-        except Exception as e:
-            self._log(f"Export error: {e}")
-            QMessageBox.warning(self, "Error", str(e))
+            out_dir = self.ed_out_ps.text().strip()
+            Path(out_dir).mkdir(parents=True, exist_ok=True)
+            ref_id = self.result.get('ref_id', 2)
+            tgt_id = self.result.get('tgt_id', 5)
+            fmt = self._output_format()
+            saved = []
+            if fmt in ('both', 'vectors') and hasattr(self, 'fig_psv'):
+                p = str(Path(out_dir) / f'ps_vectors_Z{ref_id}_vs_Z{tgt_id}.png')
+                self.fig_psv.savefig(p, dpi=200, bbox_inches='tight')
+                saved.append(p)
+            if fmt in ('both', 'heatmap') and hasattr(self, 'fig_psh'):
+                p = str(Path(out_dir) / f'ps_heatmap_Z{ref_id}_Z{tgt_id}.png')
+                self.fig_psh.savefig(p, dpi=200, bbox_inches='tight')
+                saved.append(p)
+            if saved:
+                self._log(f"Exported: " + ", ".join(saved))
+                QMessageBox.information(self, self._t("saved_title"), self._t("saved_message").format(path="\n".join(saved)))
+            else:
+                QMessageBox.information(self, self._t("hint_title"), self._t("run_analysis_first"))
 
     def _on_done(self, res: Optional[dict]) -> None:
-        # Re-enable the correct Start button
-        tab_idx = self.tabs.currentIndex()
-        if tab_idx == 0:
+        # Re-enable the Start button for the tab that initiated the run
+        if self._active_run_tab == 0:
             self._btn_run_g.setEnabled(True)
-        elif tab_idx == 1:
+        elif self._active_run_tab == 1:
             self._btn_run_ps.setEnabled(True)
+        self._active_run_tab = None
         self.bar.setRange(0, 1)
-        if not res: return
+        if not res:
+            return
         self.result = res
         mode = res.get('mode', '?')
         n_results = len(res.get('results', {}))
@@ -1375,15 +1813,15 @@ class DistortionGUI(QMainWindow):
         QTimer.singleShot(300, self._auto_popup)
 
     def _on_err(self, e: str) -> None:
-        # Re-enable the correct Start button
-        tab_idx = self.tabs.currentIndex()
-        if tab_idx == 0:
+        # Re-enable the Start button for the tab that initiated the run
+        if self._active_run_tab == 0:
             self._btn_run_g.setEnabled(True)
-        elif tab_idx == 1:
+        elif self._active_run_tab == 1:
             self._btn_run_ps.setEnabled(True)
+        self._active_run_tab = None
         self.bar.setRange(0, 1)
         self._log(f"ERROR: {e}")
-        QMessageBox.critical(self, "Error", e)
+        QMessageBox.critical(self, self._t("error_title"), e)
 
     # ====================================================================
     #  DRAWING — draw on in-tab canvas (no popup)
@@ -1415,20 +1853,18 @@ class DistortionGUI(QMainWindow):
                 tgt_id = self.result['tgt_id']
                 x_fov = self.result.get('x_fov', 26.565)
                 y_fov = self.result.get('y_fov', 26.565)
-                self.fig_ps.clear()
-                if fmt == 'both':
-                    ax1 = self.fig_ps.add_subplot(211)
-                    self._render_ps_vectors(ax1, results, ref_id, tgt_id, x_fov, y_fov)
-                    ax2 = self.fig_ps.add_subplot(212)
-                    self._render_ps_heatmap(ax2, results, ref_id, tgt_id, x_fov, y_fov)
-                elif fmt == 'vectors':
-                    ax = self.fig_ps.add_subplot(111)
+                if fmt in ('both', 'vectors'):
+                    self.fig_psv.clear()
+                    ax = self.fig_psv.add_subplot(111)
                     self._render_ps_vectors(ax, results, ref_id, tgt_id, x_fov, y_fov)
-                else:
-                    ax = self.fig_ps.add_subplot(111)
+                    self.fig_psv.tight_layout()
+                    self.canvas_psv.draw()
+                if fmt in ('both', 'heatmap'):
+                    self.fig_psh.clear()
+                    ax = self.fig_psh.add_subplot(111)
                     self._render_ps_heatmap(ax, results, ref_id, tgt_id, x_fov, y_fov)
-                self.fig_ps.tight_layout()
-                self.canvas_ps.draw()
+                    self.fig_psh.tight_layout()
+                    self.canvas_psh.draw()
                 self._log("Pupil Swim result drawn on canvas.")
         except Exception as e:
             self._log_exc("Draw err", e)
@@ -1728,7 +2164,7 @@ class DistortionGUI(QMainWindow):
     def _on_export(self):
         """Batch-save all analysis charts to output directory."""
         if not self.result:
-            QMessageBox.information(self, "Hint", "No data yet"); return
+            QMessageBox.information(self, self._t("hint_title"), self._t("no_data_yet")); return
 
         out_dir = self.ed_out_g.text().strip() if self.tabs.currentIndex() == 0 \
                   else self.ed_out_ps.text().strip()
