@@ -1,27 +1,411 @@
 [
   {
-    "brand": "auo",
-    "model": "A052HAN01.0",
-    "size": 5.18,
-    "width0": 1080,
-    "height0": 3840,
-    "pixelsize_mm": 0.033
+    "brand": "JBD",
+    "model": "JBD013VGA",
+    "size": 0.13,
+    "width0": 640,
+    "height0": 480,
+    "pixelsize_mm": 0.004
   },
   {
-    "brand": "BOE",
-    "model": "NT57860",
-    "size": 3.5,
+    "brand": "Saphlux",
+    "model": "T1-0.13\" Full-Color",
+    "size": 0.13,
+    "width0": 320,
+    "height0": 240,
+    "pixelsize_mm": 0.008
+  },
+  {
+    "brand": "CyberDisplay",
+    "model": "WQVGA LVS",
+    "size": 0.2,
+    "width0": 428,
+    "height0": 240,
+    "pixelsize_mm": 0.0105
+  },
+  {
+    "brand": "Himax",
+    "model": "HX7059",
+    "size": 0.217,
+    "width0": 640,
+    "height0": 360,
+    "pixelsize_mm": 0.0075
+  },
+  {
+    "brand": "Himax",
+    "model": "HX7079",
+    "size": 0.217,
+    "width0": 640,
+    "height0": 360,
+    "pixelsize_mm": 0.0075
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX336CN",
+    "size": 0.23,
+    "width0": 640,
+    "height0": 400,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX336AF",
+    "size": 0.23,
+    "width0": 640,
+    "height0": 400,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "熙泰",
+    "model": "S023MSAFJF10111E1",
+    "size": 0.23,
+    "width0": 640,
+    "height0": 400,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "Citizen",
+    "model": "FL1408",
+    "size": 0.24,
+    "width0": 960,
+    "height0": 540,
+    "pixelsize_mm": 0.0055
+  },
+  {
+    "brand": "Citizen",
+    "model": "FH02P-4",
+    "size": 0.24,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.00413
+  },
+  {
+    "brand": "观宇",
+    "model": "KA025VG",
+    "size": 0.25,
+    "width0": 640,
+    "height0": 480,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "RaonTech",
+    "model": "RDP240H",
+    "size": 0.24,
     "width0": 1440,
-    "height0": 1600,
-    "pixelsize_mm": 0.04125
+    "height0": 1440,
+    "pixelsize_mm": 0.003
+  },
+  {
+    "brand": "RaonTech",
+    "model": "RDP250H",
+    "size": 0.25,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.0043
+  },
+  {
+    "brand": "OmniVision",
+    "model": "OVP2200",
+    "size": 0.26,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.0045
+  },
+  {
+    "brand": "Himax",
+    "model": "HX7097",
+    "size": 0.294,
+    "width0": 800,
+    "height0": 480,
+    "pixelsize_mm": 0.00801
+  },
+  {
+    "brand": "国兆",
+    "model": "GZ030PCC02",
+    "size": 0.3,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.00522
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY032WEM01",
+    "size": 0.32,
+    "width0": 800,
+    "height0": 600,
+    "pixelsize_mm": 0.0081
+  },
+  {
+    "brand": "Himax",
+    "model": "HX7028",
+    "size": 0.35,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.006
+  },
+  {
+    "brand": "国兆",
+    "model": "GZ036PCC02",
+    "size": 0.36,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.0063
+  },
+  {
+    "brand": "RaonTech",
+    "model": "RDP320F-X",
+    "size": 0.37,
+    "width0": 1952,
+    "height0": 1112,
+    "pixelsize_mm": 0.0043
+  },
+  {
+    "brand": "Citizen",
+    "model": "FE01M-1,FL1304",
+    "size": 0.38,
+    "width0": 1280,
+    "height0": 720,
+    "pixelsize_mm": 0.0066
+  },
+  {
+    "brand": "奥雷德",
+    "model": "SVGA038S",
+    "size": 0.38,
+    "width0": 804,
+    "height0": 604,
+    "pixelsize_mm": 0.0096
+  },
+  {
+    "brand": "MICRODISPLAYS",
+    "model": "MDP03",
+    "size": 0.39,
+    "width0": 1024,
+    "height0": 768,
+    "pixelsize_mm": 0.0076
   },
   {
     "brand": "BOE",
-    "model": "S6D1JT0",
-    "size": 5.7,
-    "width0": 2160,
-    "height0": 3840,
-    "pixelsize_mm": 0.03285
+    "model": "B039FH8A0",
+    "size": 0.39,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.0045
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX334CF",
+    "size": 0.39,
+    "width0": 1024,
+    "height0": 768,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "OmniVision",
+    "model": "OP02220BA",
+    "size": 0.39,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.0045
+  },
+  {
+    "brand": "Citizen",
+    "model": "FF05M-1",
+    "size": 0.4,
+    "width0": 1280,
+    "height0": 960,
+    "pixelsize_mm": 0.00635
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX350FN",
+    "size": 0.44,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.0051
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY049WDM01",
+    "size": 0.49,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.005616
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY049WDM02",
+    "size": 0.49,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.005616
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY049WDM07",
+    "size": 0.49,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.005616
+  },
+  {
+    "brand": "熙泰",
+    "model": "049BFMF02-V06",
+    "size": 0.49,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.005616
+  },
+  {
+    "brand": "BOE",
+    "model": "VX049-FHP-NH0-DC03",
+    "size": 0.49,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.005616
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX337SN",
+    "size": 0.5,
+    "width0": 1300,
+    "height0": 980,
+    "pixelsize_mm": 0.0078
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX348ENA",
+    "size": 0.55,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.0063
+  },
+  {
+    "brand": "奥雷德",
+    "model": "SVGA060",
+    "size": 0.6,
+    "width0": 804,
+    "height0": 604,
+    "pixelsize_mm": 0.015
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY060LDM01",
+    "size": 0.6,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.006885
+  },
+  {
+    "brand": "熙泰",
+    "model": "061MFMF01-V01",
+    "size": 0.61,
+    "width0": 2560,
+    "height0": 1600,
+    "pixelsize_mm": 0.0051
+  },
+  {
+    "brand": "microoled",
+    "model": "MDP02BP",
+    "size": 0.61,
+    "width0": 1280,
+    "height0": 1024,
+    "pixelsize_mm": 0.0094
+  },
+  {
+    "brand": "microoled",
+    "model": "MDP02BP",
+    "size": 0.61,
+    "width0": 2560,
+    "height0": 2048,
+    "pixelsize_mm": 0.0047
+  },
+  {
+    "brand": "国兆",
+    "model": "GZ065PKC01",
+    "size": 0.65,
+    "width0": 2560,
+    "height0": 1440,
+    "pixelsize_mm": 0.00567
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX343EN",
+    "size": 0.68,
+    "width0": 1920,
+    "height0": 1200,
+    "pixelsize_mm": 0.00765
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX335AF-6",
+    "size": 0.71,
+    "width0": 1920,
+    "height0": 1080,
+    "pixelsize_mm": 0.0081
+  },
+  {
+    "brand": "BOE",
+    "model": "VX071FHP-NH0/VX071FHM-NH0",
+    "size": 0.71,
+    "width0": 1952,
+    "height0": 1112,
+    "pixelsize_mm": 0.008101
+  },
+  {
+    "brand": "Sony",
+    "model": "ECX335SN-6",
+    "size": 0.71,
+    "width0": 1950,
+    "height0": 1110,
+    "pixelsize_mm": 0.008103
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SY072WCM04",
+    "size": 0.72,
+    "width0": 1920,
+    "height0": 1200,
+    "pixelsize_mm": 0.0081
+  },
+  {
+    "brand": "MAY",
+    "model": "M2160M78",
+    "size": 0.78,
+    "width0": 4096,
+    "height0": 2240,
+    "pixelsize_mm": 0.00427
+  },
+  {
+    "brand": "SeeYA",
+    "model": "1.03\"OLED",
+    "size": 1.03,
+    "width0": 2560,
+    "height0": 2560,
+    "pixelsize_mm": 0.0072
+  },
+  {
+    "brand": "昀光",
+    "model": "LMC132U2K5C-CA",
+    "size": 1.32,
+    "width0": 2560,
+    "height0": 2560,
+    "pixelsize_mm": 0.0093
+  },
+  {
+    "brand": "BOE",
+    "model": "VX135KDP-NM2",
+    "size": 1.35,
+    "width0": 3840,
+    "height0": 3552,
+    "pixelsize_mm": 0.006543
+  },
+  {
+    "brand": "SeeYA",
+    "model": "SeeYa013VGA",
+    "size": 1.4,
+    "width0": 2560,
+    "height0": 2560,
+    "pixelsize_mm": 0.0093
   },
   {
     "brand": "BOE",
@@ -65,6 +449,46 @@
   },
   {
     "brand": "BOE",
+    "model": "BV028QVE-N80",
+    "size": 2.83,
+    "width0": 240,
+    "height0": 320,
+    "pixelsize_mm": 0.18
+  },
+  {
+    "brand": "Tianma",
+    "model": "TL031xxxx01-00",
+    "size": 3.14,
+    "width0": 800,
+    "height0": 480,
+    "pixelsize_mm": 0.855
+  },
+  {
+    "brand": "BOE",
+    "model": "NT57860",
+    "size": 3.5,
+    "width0": 1440,
+    "height0": 1600,
+    "pixelsize_mm": 0.04125
+  },
+  {
+    "brand": "auo",
+    "model": "A052HAN01.0",
+    "size": 5.18,
+    "width0": 1080,
+    "height0": 3840,
+    "pixelsize_mm": 0.033
+  },
+  {
+    "brand": "Sharp",
+    "model": "sharp013VGA",
+    "size": 5.464,
+    "width0": 3840,
+    "height0": 2160,
+    "pixelsize_mm": 0.0315
+  },
+  {
+    "brand": "BOE",
     "model": "VS055QHM",
     "size": 5.5,
     "width0": 1440,
@@ -73,394 +497,10 @@
   },
   {
     "brand": "BOE",
-    "model": "VX049-FHP-NH0-DC03",
-    "size": 0.49,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.005616
-  },
-  {
-    "brand": "BOE",
-    "model": "VX071FHP-NH0/VX071FHM-NH0",
-    "size": 0.71,
-    "width0": 1952,
-    "height0": 1112,
-    "pixelsize_mm": 0.00810138
-  },
-  {
-    "brand": "BOE",
-    "model": "VX135KDP-NM2",
-    "size": 1.35,
-    "width0": 3840,
-    "height0": 3552,
-    "pixelsize_mm": 0.00654333
-  },
-  {
-    "brand": "Citizen Finedevice Co., Ltd.",
-    "model": "FE01M-1,FL1304",
-    "size": 0.38,
-    "width0": 1280,
-    "height0": 720,
-    "pixelsize_mm": 0.0066
-  },
-  {
-    "brand": "Citizen Finedevice Co., Ltd.",
-    "model": "FF05M-1",
-    "size": 0.4,
-    "width0": 1280,
-    "height0": 960,
-    "pixelsize_mm": 0.00635
-  },
-  {
-    "brand": "Citizen Finedevice Co., Ltd.",
-    "model": "FH02P-4",
-    "size": 0.24,
-    "width0": 1280,
-    "height0": 720,
-    "pixelsize_mm": 0.00413
-  },
-  {
-    "brand": "CITIZEN FINETECH MIYOTA CO., LTD",
-    "model": "FL1408",
-    "size": 0.24,
-    "width0": 960,
-    "height0": 540,
-    "pixelsize_mm": 0.0055
-  },
-  {
-    "brand": "CyberDisplay",
-    "model": "WQVGA LVS",
-    "size": 0.2,
-    "width0": 428,
-    "height0": 240,
-    "pixelsize_mm": 0.0105
-  },
-  {
-    "brand": "Himax",
-    "model": "HX7028",
-    "size": 0.35,
-    "width0": 1280,
-    "height0": 720,
-    "pixelsize_mm": 0.006
-  },
-  {
-    "brand": "Himax",
-    "model": "HX7059",
-    "size": 0.217,
-    "width0": 640,
-    "height0": 360,
-    "pixelsize_mm": 0.0075
-  },
-  {
-    "brand": "Himax",
-    "model": "HX7079",
-    "size": 0.217,
-    "width0": 640,
-    "height0": 360,
-    "pixelsize_mm": 0.0075
-  },
-  {
-    "brand": "Himax",
-    "model": "HX7097",
-    "size": 0.294,
-    "width0": 800,
-    "height0": 480,
-    "pixelsize_mm": 0.00801
-  },
-  {
-    "brand": "JBD",
-    "model": "JBD013VGA",
-    "size": 0.13,
-    "width0": 640,
-    "height0": 480,
-    "pixelsize_mm": 0.004
-  },
-  {
-    "brand": "Kunming BOE",
-    "model": "B039FH8A0",
-    "size": 0.39,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.0045
-  },
-  {
-    "brand": "MAY Co., Ltd",
-    "model": "M2160M78",
-    "size": 0.78,
-    "width0": 4096,
-    "height0": 2240,
-    "pixelsize_mm": 0.00427
-  },
-  {
-    "brand": "MICRODISPLAYS",
-    "model": "MDP03",
-    "size": 0.39,
-    "width0": 1024,
-    "height0": 768,
-    "pixelsize_mm": 0.0076
-  },
-  {
-    "brand": "microoled",
-    "model": "MDP02BP",
-    "size": 0.61,
-    "width0": 1280,
-    "height0": 1024,
-    "pixelsize_mm": 0.0094
-  },
-  {
-    "brand": "microoled",
-    "model": "MDP02BP",
-    "size": 0.61,
-    "width0": 2560,
-    "height0": 2048,
-    "pixelsize_mm": 0.0047
-  },
-  {
-    "brand": "omni vision",
-    "model": "OVP2200",
-    "size": 0.26,
-    "width0": 1280,
-    "height0": 720,
-    "pixelsize_mm": 0.0045
-  },
-  {
-    "brand": "OmniVision",
-    "model": "OP02220BA",
-    "size": 0.39,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.0045
-  },
-  {
-    "brand": "RaonTech",
-    "model": "RDP240H",
-    "size": 0.24,
-    "width0": 1440,
-    "height0": 1440,
-    "pixelsize_mm": 0.003
-  },
-  {
-    "brand": "RaonTech",
-    "model": "RDP250H",
-    "size": 0.25,
-    "width0": 1280,
-    "height0": 720,
-    "pixelsize_mm": 0.0043
-  },
-  {
-    "brand": "RAONTECH",
-    "model": "RDP320F-X",
-    "size": 0.37,
-    "width0": 1952,
-    "height0": 1112,
-    "pixelsize_mm": 0.0043
-  },
-  {
-    "brand": "Saphlux",
-    "model": "T1-0.13\" Full-Color",
-    "size": 0.13,
-    "width0": 320,
-    "height0": 240,
-    "pixelsize_mm": 0.008
-  },
-  {
-    "brand": "SeeYA",
-    "model": "1.03\"OLED",
-    "size": 1.03,
-    "width0": 2560,
-    "height0": 2560,
-    "pixelsize_mm": 0.0072
-  },
-  {
-    "brand": "SeeYa",
-    "model": "SeeYa013VGA",
-    "size": 1.4,
-    "width0": 2560,
-    "height0": 2560,
-    "pixelsize_mm": 0.0093
-  },
-  {
-    "brand": "SeeYA",
-    "model": "SY032WEM01",
-    "size": 0.32,
-    "width0": 800,
-    "height0": 600,
-    "pixelsize_mm": 0.0081
-  },
-  {
-    "brand": "SeeYA",
-    "model": "SY049WDM01",
-    "size": 0.49,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.005616
-  },
-  {
-    "brand": "SeeYA",
-    "model": "SY049WDM02",
-    "size": 0.49,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.005616
-  },
-  {
-    "brand": "SeeYA",
-    "model": "SY049WDM07",
-    "size": 0.49,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.005616
-  },
-  {
-    "brand": "SeeYa",
-    "model": "SY060LDM01",
-    "size": 0.6,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.006885
-  },
-  {
-    "brand": "SeeYa",
-    "model": "SY072WCM04",
-    "size": 0.72,
-    "width0": 1920,
-    "height0": 1200,
-    "pixelsize_mm": 0.0081
-  },
-  {
-    "brand": "sharp",
-    "model": "sharp013VGA",
-    "size": 5.464,
-    "width0": 3840,
-    "height0": 2160,
-    "pixelsize_mm": 0.0315
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX334CF",
-    "size": 0.39,
-    "width0": 1024,
-    "height0": 768,
-    "pixelsize_mm": 0.00779981
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX335AF-6",
-    "size": 0.71,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.0081
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX335SN-6",
-    "size": 0.71,
-    "width0": 1950,
-    "height0": 1110,
-    "pixelsize_mm": 0.00810256
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX336AF",
-    "size": 0.23,
-    "width0": 640,
-    "height0": 400,
-    "pixelsize_mm": 0.0078
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX336CN",
-    "size": 0.23,
-    "width0": 640,
-    "height0": 400,
-    "pixelsize_mm": 0.0078
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX337SN",
-    "size": 0.5,
-    "width0": 1300,
-    "height0": 980,
-    "pixelsize_mm": 0.0078
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX343EN",
-    "size": 0.68,
-    "width0": 1920,
-    "height0": 1200,
-    "pixelsize_mm": 0.00765
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX348ENA",
-    "size": 0.55,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.0063
-  },
-  {
-    "brand": "Sony",
-    "model": "ECX350FN",
-    "size": 0.44,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.0051
-  },
-  {
-    "brand": "奥雷德",
-    "model": "SVGA038S",
-    "size": 0.38,
-    "width0": 804,
-    "height0": 604,
-    "pixelsize_mm": 0.0096
-  },
-  {
-    "brand": "奥雷德",
-    "model": "SVGA060",
-    "size": 0.6,
-    "width0": 804,
-    "height0": 604,
-    "pixelsize_mm": 0.015
-  },
-  {
-    "brand": "昀光",
-    "model": "LMC132U2K5C-CA",
-    "size": 1.32,
-    "width0": 2560,
-    "height0": 2560,
-    "pixelsize_mm": 0.0093
-  },
-  {
-    "brand": "熙泰",
-    "model": "049BFMF02-V06",
-    "size": 0.49,
-    "width0": 1920,
-    "height0": 1080,
-    "pixelsize_mm": 0.005616
-  },
-  {
-    "brand": "熙泰",
-    "model": "061MFMF01-V01",
-    "size": 0.61,
-    "width0": 2560,
-    "height0": 1600,
-    "pixelsize_mm": 0.0051
-  },
-  {
-    "brand": "熙泰",
-    "model": "S023MSAFJF10111E1",
-    "size": 0.23,
-    "width0": 640,
-    "height0": 400,
-    "pixelsize_mm": 0.0078
-  },
-  {
-    "brand": "观宇",
-    "model": "KA025VG",
-    "size": 0.25,
-    "width0": 640,
-    "height0": 480,
-    "pixelsize_mm": 0.0078
+    "model": "S6D1JT0",
+    "size": 5.7,
+    "width0": 2160,
+    "height0": 3840,
+    "pixelsize_mm": 0.03285
   }
 ]
