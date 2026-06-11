@@ -1078,7 +1078,10 @@ class DistortionGUI(QMainWindow):
     def _load_displays_db(self):
         """Load display panel database for correction tab."""
         from distortion_correction import load_displays_db
-        db_path = str(Path(__file__).parent / "displays.json")
+        if getattr(sys, 'frozen', False):
+            db_path = str(Path(sys._MEIPASS) / "displays.json")
+        else:
+            db_path = str(Path(__file__).parent / "displays.json")
         self._displays_db = load_displays_db(db_path)
         brands = sorted(set(d["brand"] for d in self._displays_db))
         self.cmb_corr_brand.clear()

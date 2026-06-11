@@ -139,7 +139,7 @@ def build(skip_cleanup: bool = False) -> None:
         sys.exit(1)
 
     # Copy macro files and icon into dist root as fallback
-    for filename in ["dist_real_pro.seq", "dist_polar_pro.seq", "icon.ico"]:
+    for filename in ["dist_real_pro.seq", "dist_polar_pro.seq", "displays.json", "icon.ico"]:
         src = ROOT / filename
         dst = DIST_DIR / filename
         if src.exists() and not dst.exists():
