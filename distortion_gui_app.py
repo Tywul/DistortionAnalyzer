@@ -1577,9 +1577,13 @@ class DistortionGUI(QMainWindow):
             self._load_wavelengths(p)
             self._populate_corr_seq_info()
             self._loaded_seq_path = p
-            # Auto-set output dir to {program_root}/{lens_name}/
+            # Auto-set output dir to {exe_or_src_root}/{lens_name}/
             lens_name = Path(p).stem
-            out_dir = str(Path(__file__).parent / lens_name)
+            if getattr(sys, 'frozen', False):
+                prog_dir = Path(sys.executable).parent
+            else:
+                prog_dir = Path(__file__).parent
+            out_dir = str(prog_dir / lens_name)
             Path(out_dir).mkdir(parents=True, exist_ok=True)
             self.ed_out_g.setText(out_dir)
             self.ed_out_ps.setText(out_dir)
