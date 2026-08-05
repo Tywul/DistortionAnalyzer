@@ -1,5 +1,34 @@
 # 更新日志
 
+## V1.3 — 2026-08-05
+
+### 结果缓存
+- 所有分析结果存入内存缓存，相同参数（zoom/wl/fov/gs）不重复计算
+- 部分命中时仅对缺失数据连接 CODE V，已有数据直接 merge
+- 更换镜头文件时清空缓存
+
+### 文件命名规范化
+- 畸变网格统一命名 `z{zoom}_{tag}.txt`（如 z1_r.txt），不含时间戳
+- CorrectionWorker / AnalysisWorker / DistortionAnalyzer 共用同一函数跑 macro + 保存
+
+### UI 交互优化
+- 面板半宽/半高 ↔ 有效宽/高 双向联动（像素尺寸为换算系数）
+- 分析中三个 CODE V 按钮灰掉 + 跑马灯进度条，完成自动恢复
+- 品牌下拉展开时自动热加载 displays.json（无需重启）
+
+### 打包优化
+- `--collect-submodules win32com` 修复 exe 中 pywin32 缺失
+- 打包版 exe 目录下的 displays.json / macro 文件优先于内置版本（支持热替换）
+- macro_dir 冻结模式下指向 exe 目录，非 `_internal/`
+
+### 代码清理
+- 删除 `get_zoom_info` / `set_zoom` 死代码（COM 调用）
+- 删除 `_safe_remove` 死方法；`_read_temp_file` → `_read_out_file`
+- `analyze_zoom_range` 去除双重前缀 bug
+- pywin32 检查从 `__init__` 移至 `connect()`（懒加载）
+
+---
+
 ## V1.2 — 2026-06-11
 
 ### 数据更新

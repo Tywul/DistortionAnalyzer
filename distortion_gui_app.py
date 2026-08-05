@@ -376,7 +376,7 @@ class AnalysisWorker(QThread):
             mode = self.kwargs.get('mode', 'grid')
 
             self.progress.emit("Connecting CODE V ...")
-            analyzer = DistortionAnalyzer(workdir=workdir)
+            analyzer = DistortionAnalyzer(workdir=workdir, auto_connect=False)
 
             self.progress.emit("Loading lens ...")
             analyzer.load_lens(self.seq_path)
@@ -428,24 +428,28 @@ class AnalysisWorker(QThread):
     def _run_grid(self, analyzer: Any, wavelengths: list, ref_idx: int) -> dict:
         zoom_ids = self.kwargs.get('zoom_ids', [1])
         wl_mode = self.kwargs.get('wl_mode', 'single')
-        wl_choice = self.kwargs.get('wl_index', ref_idx)  # user-selected for single
+        wl_choice = self.kwargs.get('wl_index', ref_idx)
         x_fov = self.kwargs.get('x_fov', 26.565)
         y_fov = self.kwargs.get('y_fov', 26.565)
         gs = self.kwargs.get('grid_size', 21)
+        cached = self.kwargs.get('cached_results', {})
+        WL_TAGS = {1: 'r', 2: 'g', 3: 'b'}
 
         results = {}
 
         if wl_mode == 'multi':
-            # Multi-color: run all wavelengths for each selected zoom
-            # KEY: wl_index (1-based) controls REF switching for ray tracing.
-            #      wavelength string only controls plot line color (ARG6).
             color_names = ['RED', 'GRE', 'BLU', 'MAG', 'YEL', 'CYA', 'WHI']
             total = len(zoom_ids) * len(wavelengths)
             count = 0
             for zid in zoom_ids:
                 for wi, wl_val in enumerate(wavelengths):
                     count += 1
-                    wl_index = wi + 1  # 1-based wavelength index for REF
+                    wl_index = wi + 1
+                    cache_key = (zid, wl_index, gs, x_fov, y_fov)
+                    if cache_key in cached:
+                        results[(zid, wi)] = cached[cache_key]
+                        self.progress.emit(f"[{count}/{total}] Z{zid} WL{wl_index} (cached)")
+                        continue
                     wl_label = f"{wl_val:.0f}nm"
                     self.progress.emit(f"[{count}/{total}] Z{zid} @ {wl_label} ...")
                     try:
@@ -453,25 +457,31 @@ class AnalysisWorker(QThread):
                             zoom_pos=zid, num_lines=gs,
                             x_fov=x_fov, y_fov=y_fov,
                             wavelength=color_names[wi % len(color_names)],
-                            wl_index=wl_index)
+                            wl_index=wl_index,
+                            tag=WL_TAGS.get(wl_index, f'w{wl_index}'))
                         results[(zid, wi)] = self._pack_grid_result(
                             grid, gs, x_fov=x_fov, y_fov=y_fov,
-                            wavelength=wl_val, wl_index=wi + 1)
+                            wavelength=wl_val, wl_index=wl_index)
                     except Exception as e:
                         self.progress.emit(f"  Z{zid}@{wl_label} failed: {e}")
                         results[(zid, wi)] = self._pack_grid_result(
-                            None, gs, wavelength=wl_val, wl_index=wi + 1)
+                            None, gs, wavelength=wl_val, wl_index=wl_index)
         else:
-            # Single-color: use chosen wavelength
             wl_val = wavelengths[wl_choice - 1] if wl_choice <= len(wavelengths) else wavelengths[0]
             wl_label = f"{wl_val:.0f}nm"
             for zi, zid in enumerate(zoom_ids):
+                cache_key = (zid, wl_choice, gs, x_fov, y_fov)
+                if cache_key in cached:
+                    results[zid] = cached[cache_key]
+                    self.progress.emit(f"[{zi+1}/{len(zoom_ids)}] Z{zid} WL{wl_choice} (cached)")
+                    continue
                 self.progress.emit(f"[{zi+1}/{len(zoom_ids)}] Z{zid} @ {wl_label} ...")
                 try:
                     grid = analyzer.get_distortion_grid(
                         zoom_pos=zid, num_lines=gs,
                         x_fov=x_fov, y_fov=y_fov,
-                        wl_index=wl_choice, wavelength=wl_label)
+                        wl_index=wl_choice, wavelength=wl_label,
+                        tag=WL_TAGS.get(wl_choice, f'w{wl_choice}'))
                     results[zid] = self._pack_grid_result(
                         grid, gs, x_fov=x_fov, y_fov=y_fov,
                         wavelength=wl_val, wl_index=wl_choice)
@@ -498,17 +508,26 @@ class AnalysisWorker(QThread):
         x_fov = self.kwargs.get('x_fov', 26.565)
         y_fov = self.kwargs.get('y_fov', 26.565)
         gs = self.kwargs.get('grid_size', 21)
+        cached = self.kwargs.get('cached_results', {})
         wl_val = wavelengths[ref_idx - 1]
         wl_label = f"{wl_val:.0f}nm"
+        WL_TAGS = {1: 'r', 2: 'g', 3: 'b'}
+        wl_tag = WL_TAGS.get(ref_idx, f'w{ref_idx}')
 
         results = {}
         for zid, name in [(ref_id, 'Reference'), (tgt_id, 'Target')]:
+            cache_key = (zid, ref_idx, gs, x_fov, y_fov)
+            if cache_key in cached:
+                results[zid] = cached[cache_key]
+                self.progress.emit(f"Z{zid} ({name}) (cached)")
+                continue
             self.progress.emit(f"Tracing Z{zid} ({name}) @ {wl_label} ...")
             try:
                 grid = analyzer.get_distortion_grid(
                     zoom_pos=zid, num_lines=gs,
                     x_fov=x_fov, y_fov=y_fov,
-                    wl_index=ref_idx, wavelength=wl_label)
+                    wl_index=ref_idx, wavelength=wl_label,
+                    tag=wl_tag)
                 results[zid] = self._pack_grid_result(
                     grid, gs, x_fov=x_fov, y_fov=y_fov)
             except Exception as e:
@@ -531,9 +550,9 @@ class AnalysisWorker(QThread):
 #  Correction Worker (Tab 3: CODE V tracing + polynomial fitting)
 # ============================================================
 class CorrectionWorker(QObject):
-    """CODE V 后台追迹（独立 R/G/B 通道波长）+ 多项式拟合"""
+    """畸变拟合：共用 DistortionAnalyzer 追迹 R/G/B，自动保存 z{zoom}_{r,g,b}.txt"""
     progress = pyqtSignal(str)
-    finished = pyqtSignal(str, str)  # (work_dir, error_msg)
+    finished = pyqtSignal(str, int, str)  # (work_dir, zoom, error_msg)
 
     def __init__(self, seq_path, halfx, halfy, panel_w, panel_h,
                  zoom, num_lines, wl_indices, macro_path):
@@ -544,52 +563,37 @@ class CorrectionWorker(QObject):
         self.wl_indices = wl_indices; self.macro_path = macro_path
 
     def run(self) -> None:
-        try:
-            import win32com.client
-        except ImportError:
-            self.finished.emit("", "未找到 win32com，请安装 pywin32：pip install pywin32")
-            return
-
-        macro = Path(self.macro_path)
-        if not macro.is_file():
-            self.finished.emit("", f"找不到宏文件：{self.macro_path}")
-            return
+        from distortion_analyzer import DistortionAnalyzer
 
         work_dir = str(Path(self.seq_path).parent)
+        WL_TAGS = {1: 'r', 2: 'g', 3: 'b'}
+        labels = ["R", "G", "B"]
+
         try:
             self.progress.emit("Connecting CODE V ...")
-            cv = win32com.client.Dispatch("CODEV.Application")
-            try: cv.StartCodeV()
-            except Exception: pass
-            cv.Command(f'CD "{work_dir}"')
-            cv.Command(f'IN "{self.seq_path}"')
-
-            out_names = ["r.txt", "g.txt", "b.txt"]
-            labels = ["R", "G", "B"]
-            traced = {}
+            analyzer = DistortionAnalyzer(workdir=work_dir, auto_connect=False)
+            analyzer.load_lens(self.seq_path)
 
             for idx, wl in enumerate(self.wl_indices):
                 label = labels[idx]
-                outfile = str(Path(work_dir) / out_names[idx])
-                if wl in traced:
-                    self.progress.emit(f"{label} (WL={wl}, reuse) -> {out_names[idx]}")
-                    Path(outfile).write_text(traced[wl], encoding='utf-8')
-                else:
-                    self.progress.emit(f"Trace {label} (WL={wl}) ...")
-                    cv.Command(f"REF {wl}")
-                    cmd = (f'IN "{self.macro_path}" {self.halfx} {self.halfy} '
-                           f'{self.panel_w} {self.panel_h} '
-                           f'"" GRE {self.num_lines} {self.zoom} "Yes"')
-                    cv.Command(cmd)
-                    try: output = cv.CommandOutput
-                    except Exception: output = ""
-                    traced[wl] = output
-                    Path(outfile).write_text(output, encoding='utf-8')
-                    self.progress.emit(f"  -> {out_names[idx]} ({len(output)} chars)")
+                wl_tag = WL_TAGS.get(wl, f'w{wl}')
+                self.progress.emit(f"Trace {label} (WL={wl}) ...")
+                try:
+                    analyzer.get_distortion_grid(
+                        zoom_pos=self.zoom, num_lines=self.num_lines,
+                        x_fov=self.halfx, y_fov=self.halfy,
+                        panel_width=self.panel_w, panel_height=self.panel_h,
+                        wl_index=wl, wavelength="GRE",
+                        tag=wl_tag)
+                    self.progress.emit(f"  -> z{self.zoom}_{wl_tag}.txt")
+                except Exception as e:
+                    self.progress.emit(f"  {label} failed: {e}")
+
             self.progress.emit("CODE V done.")
-            self.finished.emit(work_dir, "")
+            analyzer.disconnect()
+            self.finished.emit(work_dir, self.zoom, "")
         except Exception as e:
-            self.finished.emit("", f"CODE V error: {e}\n{traceback.format_exc()}")
+            self.finished.emit("", self.zoom, f"CODE V error: {e}\n{traceback.format_exc()}")
 
 
 # ============================================================
@@ -650,6 +654,7 @@ class DistortionGUI(QMainWindow):
         self.result = None
         self._wl_info = None   # cached wavelengths from SEQ
         self._loaded_seq_path = ""
+        self._grid_cache = {}   # cache: (zoom, wl_index, x_fov, y_fov, num_lines) → result dict
         self._corr_work_dir = ""
         self._corr_csv_str = ""
         self._corr_fit_result = None
@@ -866,6 +871,12 @@ class DistortionGUI(QMainWindow):
         self.cmb_corr_model = QComboBox(); self.cmb_corr_model.setMaximumWidth(140)
         self.cmb_corr_brand.activated.connect(self._on_corr_brand_changed)
         self.cmb_corr_model.activated.connect(self._on_corr_model_changed)
+        # 每次展开品牌下拉前重新读取 displays.json（支持热更新）
+        _orig_show_popup = self.cmb_corr_brand.showPopup
+        def _reload_then_show():
+            self._load_displays_db()
+            _orig_show_popup()
+        self.cmb_corr_brand.showPopup = _reload_then_show
         dp_lo.addRow(self._register_text(QLabel(self._t("brand")), "brand"), self.cmb_corr_brand)
         dp_lo.addRow(self._register_text(QLabel(self._t("model")), "model"), self.cmb_corr_model)
         self.sb_corr_w0 = QSpinBox(); self.sb_corr_w0.setRange(1, 99999); self.sb_corr_w0.setValue(1920); self.sb_corr_w0.setMaximumWidth(80)
@@ -935,12 +946,20 @@ class DistortionGUI(QMainWindow):
 
         llo.addWidget(self._grp_corr)
 
+        # ── 面板半宽/半高 ↔ 有效宽/高 双向联动（所有 widget 创建后绑定）──
+        self._panel_sync_lock = False
+        self.dsb_corr_pw.valueChanged.connect(self._on_panel_hw_changed)
+        self.dsb_corr_ph.valueChanged.connect(self._on_panel_hh_changed)
+        self.sb_corr_w0.valueChanged.connect(self._on_active_w_changed)
+        self.sb_corr_h0.valueChanged.connect(self._on_active_h_changed)
+
         # ── Buttons: Row 1 (Analysis) ──
         btn_lo1 = QHBoxLayout()
         btn_run = self._register_text(QPushButton("  \u25b6 " + self._t("start_analysis") + "  "), "start_analysis", template="  \u25b6 {label}  ")
         btn_run.setStyleSheet(
-            "font-size:13px;font-weight:bold;padding:6px 12px;"
-            "background:#1976D2;color:white;border-radius:4px;")
+            "QPushButton{font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#1976D2;color:white;border-radius:4px;}"
+            "QPushButton:disabled{background:#9e9e9e;color:#e0e0e0;}")
         btn_run.clicked.connect(lambda: self._on_run_tab(0))
         self._btn_run_g = btn_run
         btn_exp = self._register_text(QPushButton("  \U0001F4BE " + self._t("export_png") + "  "), "export_png", template="  \U0001F4BE {label}  ")
@@ -957,8 +976,9 @@ class DistortionGUI(QMainWindow):
         btn_lo2 = QHBoxLayout()
         self._btn_corr_fit = self._register_text(QPushButton("  \U0001F9EE " + self._t("fit_correction") + "  "), "fit_correction", template="  \U0001F9EE {label}  ")
         self._btn_corr_fit.setStyleSheet(
-            "font-size:13px;font-weight:bold;padding:6px 12px;"
-            "background:#E65100;color:white;border-radius:4px;")
+            "QPushButton{font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#E65100;color:white;border-radius:4px;}"
+            "QPushButton:disabled{background:#9e9e9e;color:#e0e0e0;}")
         self._btn_corr_fit.clicked.connect(self._on_fit_correction)
         self._btn_corr_export = self._register_text(QPushButton("  \U0001F4E4 " + self._t("export_csv") + "  "), "export_csv", template="  \U0001F4E4 {label}  ")
         self._btn_corr_export.setStyleSheet(
@@ -1031,8 +1051,9 @@ class DistortionGUI(QMainWindow):
         btn_lo = QHBoxLayout()
         btn_run = self._register_text(QPushButton("  \u25b6 " + self._t("start_analysis") + "  "), "start_analysis", template="  \u25b6 {label}  ")
         btn_run.setStyleSheet(
-            "font-size:13px;font-weight:bold;padding:6px 12px;"
-            "background:#1976D2;color:white;border-radius:4px;")
+            "QPushButton{font-size:13px;font-weight:bold;padding:6px 12px;"
+            "background:#1976D2;color:white;border-radius:4px;}"
+            "QPushButton:disabled{background:#9e9e9e;color:#e0e0e0;}")
         btn_run.clicked.connect(lambda: self._on_run_tab(1))
         self._btn_run_ps = btn_run
         btn_exp = self._register_text(QPushButton("  \U0001F4BE " + self._t("export_png") + "  "), "export_png", template="  \U0001F4BE {label}  ")
@@ -1076,10 +1097,13 @@ class DistortionGUI(QMainWindow):
         return tab
 
     def _load_displays_db(self):
-        """Load display panel database for correction tab."""
+        """Load display panel database. 打包后优先读 exe 同目录的 displays.json。"""
         from distortion_correction import load_displays_db
         if getattr(sys, 'frozen', False):
-            db_path = str(Path(sys._MEIPASS) / "displays.json")
+            # 打包模式：先找 exe 同目录，找不到再用打包内置的
+            external = Path(sys.executable).parent / "displays.json"
+            bundled = Path(sys._MEIPASS) / "displays.json"
+            db_path = str(external if external.is_file() else bundled)
         else:
             db_path = str(Path(__file__).parent / "displays.json")
         self._displays_db = load_displays_db(db_path)
@@ -1119,6 +1143,37 @@ class DistortionGUI(QMainWindow):
         ph = entry["height0"] * entry["pixelsize_mm"] / 2
         self.dsb_corr_pw.setValue(pw)
         self.dsb_corr_ph.setValue(ph)
+
+    # ── 面板半宽/半高 ↔ 有效宽/高 双向联动 ──
+    def _on_panel_hw_changed(self, val):
+        if self._panel_sync_lock: return
+        px = self.dsb_corr_px.value()
+        if px > 0:
+            self._panel_sync_lock = True
+            self.sb_corr_w0.setValue(int(round(val * 2 / px)))
+            self._panel_sync_lock = False
+
+    def _on_panel_hh_changed(self, val):
+        if self._panel_sync_lock: return
+        px = self.dsb_corr_px.value()
+        if px > 0:
+            self._panel_sync_lock = True
+            self.sb_corr_h0.setValue(int(round(val * 2 / px)))
+            self._panel_sync_lock = False
+
+    def _on_active_w_changed(self, val):
+        if self._panel_sync_lock: return
+        px = self.dsb_corr_px.value()
+        self._panel_sync_lock = True
+        self.dsb_corr_pw.setValue(val * px / 2)
+        self._panel_sync_lock = False
+
+    def _on_active_h_changed(self, val):
+        if self._panel_sync_lock: return
+        px = self.dsb_corr_px.value()
+        self._panel_sync_lock = True
+        self.dsb_corr_ph.setValue(val * px / 2)
+        self._panel_sync_lock = False
 
     # ========== Correction: source mode ==========
     def _on_corr_src_changed(self, btn):
@@ -1219,6 +1274,8 @@ class DistortionGUI(QMainWindow):
 
         self._btn_corr_fit.setEnabled(False)
         self._btn_corr_export.setEnabled(False)
+        self._btn_run_g.setEnabled(False)
+        self._btn_run_ps.setEnabled(False)
         self.bar.setRange(0, 0)
 
         self._corr_worker = CorrectionWorker(
@@ -1233,16 +1290,19 @@ class DistortionGUI(QMainWindow):
         self._corr_thread.started.connect(self._corr_worker.run)
         self._corr_thread.start()
 
-    def _on_correction_done(self, work_dir, err):
+    def _on_correction_done(self, work_dir, zoom, err):
         self._btn_corr_fit.setEnabled(True)
         self._btn_corr_export.setEnabled(True)
+        self._btn_run_g.setEnabled(True)
+        self._btn_run_ps.setEnabled(True)
         self.bar.setRange(0, 1)
         if err:
             self._log(f"[Correction Error] {err}")
             QMessageBox.critical(self, "CODE V Error", err[:500])
             return
         self._corr_work_dir = work_dir
-        paths = {c: str(Path(work_dir) / f"{c}.txt") for c in ["r", "g", "b"]}
+        z_prefix = f"z{zoom}_"
+        paths = {c: str(Path(work_dir) / f"{z_prefix}{c}.txt") for c in ["r", "g", "b"]}
         self._run_correction_fit(paths)
 
     def _run_correction_fit_only(self):
@@ -1735,14 +1795,29 @@ class DistortionGUI(QMainWindow):
         if self._loaded_seq_path != seq:
             self._load_wavelengths(seq)
             self._populate_corr_seq_info()
+            self._grid_cache.clear()  # 更换镜头 → 清空缓存
 
-        # Disable the correct Start button
+        # ── 检查缓存：全部命中则跳过 CODE V ──
+        seq = self.ed_seq.text().strip()
+        gs = cfg.get('grid_size', 21)
+        x_fov = cfg.get('x_fov', 26.565)
+        y_fov = cfg.get('y_fov', 26.565)
+        full_result, cached_entries = self._check_cache(cfg, gs, x_fov, y_fov)
+        if full_result is not None:
+            self._log("All results cached, reusing...")
+            self.result = full_result
+            QTimer.singleShot(100, self._auto_popup)
+            self._on_done(full_result)
+            return
+        if cached_entries:
+            self._log(f"Partial cache: {len(cached_entries)} entries reused, will trace the rest")
+            cfg['cached_results'] = cached_entries
+
+        # Disable CODE-V-triggering buttons during analysis
         self._active_run_tab = self.tabs.currentIndex()
-        tab_idx = self._active_run_tab
-        if tab_idx == 0:
-            self._btn_run_g.setEnabled(False)
-        elif tab_idx == 1:
-            self._btn_run_ps.setEnabled(False)
+        self._btn_run_g.setEnabled(False)
+        self._btn_run_ps.setEnabled(False)
+        self._btn_corr_fit.setEnabled(False)
         self.bar.setRange(0, 0)
         self._log(f"Start: {cfg['mode']}, SEQ={Path(seq).name}")
         self.worker = AnalysisWorker(seq, **cfg)
@@ -1752,6 +1827,70 @@ class DistortionGUI(QMainWindow):
         self.worker.start()
 
     # ---------- In-tab button slots ----------
+    # ── 结果缓存 ──
+    def _check_cache(self, cfg, gs, x_fov, y_fov):
+        """返回 (full_result, 缓存命中项 dict)。全命中返回 (result, {})；部分命中返回 (None, {key: entry})；全未命中返回 (None, {})"""
+        wl_info = self._wl_info or {'wavelengths': [625.0], 'ref_index': 1}
+        wavelengths = wl_info['wavelengths']
+        mode = cfg.get('mode', 'grid')
+        cached = {}
+        missing = False
+        if mode == 'grid':
+            zoom_ids = cfg.get('zoom_ids', [1])
+            wl_mode = cfg.get('wl_mode', 'single')
+            wl_idx = cfg.get('wl_index', wl_info['ref_index'])
+            if wl_mode == 'multi':
+                for zid in zoom_ids:
+                    for wi in range(len(wavelengths)):
+                        key = (zid, wi + 1, gs, x_fov, y_fov)
+                        if key in self._grid_cache:
+                            cached[key] = self._grid_cache[key]
+                        else:
+                            missing = True
+            else:
+                for zid in zoom_ids:
+                    key = (zid, wl_idx, gs, x_fov, y_fov)
+                    if key in self._grid_cache:
+                        cached[key] = self._grid_cache[key]
+                    else:
+                        missing = True
+        elif mode == 'pupil_swim':
+            ref_idx = wl_info['ref_index']
+            for zid in [cfg['ref_zoom_id'], cfg['tgt_zoom_id']]:
+                key = (zid, ref_idx, gs, x_fov, y_fov)
+                if key in self._grid_cache:
+                    cached[key] = self._grid_cache[key]
+                else:
+                    missing = True
+        if not missing and cached:
+            if mode == 'grid':
+                results = {}
+                for (zid, wi, *_rest), entry in cached.items():
+                    if wl_mode == 'multi':
+                        results[(zid, wi)] = entry
+                    else:
+                        results[zid] = entry
+                return {
+                    'mode': 'grid', 'wl_mode': wl_mode,
+                    'wavelengths': wavelengths, 'results': results,
+                    'x_fov': x_fov, 'y_fov': y_fov, 'grid_size': gs,
+                    'xlim': cfg.get('xlim', 0), 'ylim': cfg.get('ylim', 0),
+                }, {}
+            else:
+                results = {}
+                for (zid, _wi, *_rest), entry in cached.items():
+                    results[zid] = entry
+                return {
+                    'mode': 'pupil_swim',
+                    'wavelengths': wavelengths,
+                    'ref_id': cfg['ref_zoom_id'], 'tgt_id': cfg['tgt_zoom_id'],
+                    'results': results,
+                    'x_fov': x_fov, 'y_fov': y_fov, 'grid_size': gs,
+                    'xlim': cfg.get('xlim', 0), 'ylim': cfg.get('ylim', 0),
+                }, {}
+        # 部分命中或无命中 → 返回命中项供 worker 跳过
+        return (None, cached) if cached else (None, {})
+
     def _on_run_tab(self, tab_index: int) -> None:
         """Called by Start buttons inside Tab 1/2; switches to target tab then runs."""
         self.tabs.setCurrentIndex(tab_index)
@@ -1798,16 +1937,26 @@ class DistortionGUI(QMainWindow):
                 QMessageBox.information(self, self._t("hint_title"), self._t("run_analysis_first"))
 
     def _on_done(self, res: Optional[dict]) -> None:
-        # Re-enable the Start button for the tab that initiated the run
-        if self._active_run_tab == 0:
-            self._btn_run_g.setEnabled(True)
-        elif self._active_run_tab == 1:
-            self._btn_run_ps.setEnabled(True)
+        self._btn_run_g.setEnabled(True)
+        self._btn_run_ps.setEnabled(True)
+        self._btn_corr_fit.setEnabled(True)
         self._active_run_tab = None
         self.bar.setRange(0, 1)
         if not res:
             return
         self.result = res
+        # ── 存入缓存 ──
+        gs = res.get('grid_size', 21)
+        x_fov = res.get('x_fov', 0)
+        y_fov = res.get('y_fov', 0)
+        for key, entry in res.get('results', {}).items():
+            if isinstance(key, tuple):
+                zid, wi = key
+                wl = entry.get('wl_index', wi + 1)
+            else:
+                zid, wl = key, entry.get('wl_index', 1)
+            cache_key = (zid, wl, gs, x_fov, y_fov)
+            self._grid_cache[cache_key] = entry
         mode = res.get('mode', '?')
         n_results = len(res.get('results', {}))
         self._log(f"Done: mode={mode}, {n_results} dataset(s)")
@@ -1816,11 +1965,9 @@ class DistortionGUI(QMainWindow):
         QTimer.singleShot(300, self._auto_popup)
 
     def _on_err(self, e: str) -> None:
-        # Re-enable the Start button for the tab that initiated the run
-        if self._active_run_tab == 0:
-            self._btn_run_g.setEnabled(True)
-        elif self._active_run_tab == 1:
-            self._btn_run_ps.setEnabled(True)
+        self._btn_run_g.setEnabled(True)
+        self._btn_run_ps.setEnabled(True)
+        self._btn_corr_fit.setEnabled(True)
         self._active_run_tab = None
         self.bar.setRange(0, 1)
         self._log(f"ERROR: {e}")

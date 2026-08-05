@@ -1,5 +1,13 @@
 [
   {
+    "brand": "Saphlux",
+    "model": "T1-0.10\" Full-Color",
+    "size": 0.10,
+    "width0": 160,
+    "height0": 120,
+    "pixelsize_mm": 0.01224
+  },
+  {
     "brand": "JBD",
     "model": "JBD013VGA",
     "size": 0.13,

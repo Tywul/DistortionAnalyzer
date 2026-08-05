@@ -64,8 +64,9 @@ def cleanup_dist() -> None:
     else:
         print("[CLEANUP] Nothing to clean up")
 
-def build(skip_cleanup: bool = False) -> None:
-    clean()
+def build(skip_clean: bool = False, skip_cleanup: bool = False) -> None:
+    if not skip_clean:
+        clean()
 
     data_files = [
         f"dist_real_pro.seq{os.pathsep}.",
@@ -81,10 +82,10 @@ def build(skip_cleanup: bool = False) -> None:
         "--icon", str(ROOT / "icon.ico"),
         "--clean",
         "--noconfirm",
-        # Hidden imports
-        "--hidden-import", "win32com.client",
-        "--hidden-import", "win32com",
+        # Hidden imports — win32com needs collect-submodules for COM late-binding
         "--hidden-import", "pythoncom",
+        "--hidden-import", "pywintypes",
+        "--collect-submodules", "win32com",
         "--hidden-import", "matplotlib.backends.backend_qt5agg",
         "--hidden-import", "PIL",
         # Exclude heavy / unused modules
@@ -162,10 +163,8 @@ def build(skip_cleanup: bool = False) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build Distortion Analyzer standalone executable")
     parser.add_argument("--clean", action="store_true", help="Clean before building")
+    parser.add_argument("--no-clean", action="store_true", help="Skip initial clean")
     parser.add_argument("--no-cleanup", action="store_true", help="Skip post-build cleanup")
     args, _unknown = parser.parse_known_args()
 
-    if args.clean:
-        clean()
-
-    build(skip_cleanup=args.no_cleanup)
+    build(skip_clean=args.no_clean, skip_cleanup=args.no_cleanup)

@@ -366,15 +366,32 @@ if (rer)
     ^ycen == 0
 end if
 
+! rsi r1 f1
+! out y
+! wri  (x si) (y si)
+! out n
+
 ! out Y
 ! wri ($x_field f2)
 ! out n
-^xob == (xim f2)
-^yob == (yim f2)
-! Begin JFI alteration to get true central image scale (not paraxial)
-! Scale to central 5% of FOV.
-xim 0 ^xob
-yim 0 ^yob
+if ^x_field = "XOB"
+    ^xob == (xob f2)
+    ^yob == (yob f2)
+else if  ^x_field = "XAN"
+    ^xob == (xan f2)
+    ^yob == (yan f2)
+else if  ^x_field = "XIM"
+    ^xob == (xim f2)
+    ^yob == (yim f2)
+else if  ^x_field = "XRI"
+    ^xob == (xri f2)
+    ^yob == (yri f2)
+end if
+
+! rsi r1 f1
+! out y
+! wri  (x si) (y si)
+! out n
 
 ! If edge ray failed, use paraxial approximation for center coordinates
 if ^EDGE_RAY_FAIL = 1
@@ -392,6 +409,7 @@ els
        ^xcen == (x si)
        ^ycen == (y si)
     end if
+
     
     rsi 0 0 .05 .05
     
@@ -403,6 +421,7 @@ els
        ^xcorner == ^ycorner/^yob*^xob-^xcen
     end if
 end if
+
 
 if #3 = 0
     if #4 = 0
@@ -645,6 +664,9 @@ for ^j 1 ^num
                    ^fail(^i,^j) == 0
                    ^x1(^i,^j) == (x si)-^xcen
                    ^y1(^i,^j) == (y si)-^ycen
+                   out y
+                    ! wri  ^input(3)  ^input(4)  ^x(^i,^j) ^y(^i,^j) ^xcen ^ycen
+                    out n
             end if
         end if
     end for

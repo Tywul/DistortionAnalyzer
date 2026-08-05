@@ -30,6 +30,7 @@ distortion_analyzer.py — 畸变分析模块
     analyzer.plot_pupil_swim_heatmap(grid_ref, grid_compare, title="Pupil Swim Analysis")
 """
 
+import sys
 import time
 import re
 import logging
@@ -132,8 +133,12 @@ class PupilSwimResult:
 class DistortionAnalyzer:
     """畸变分析器类"""
     
-    # Default macro directory: program root (macro files copied alongside this module)
-    _MACRO_DIR = Path(__file__).parent.resolve()
+    # Default macro directory: program root (exe directory in frozen mode)
+    if getattr(sys, 'frozen', False):
+        _DEFAULT_DIR = Path(sys.executable).parent
+    else:
+        _DEFAULT_DIR = Path(__file__).parent.resolve()
+    _MACRO_DIR = _DEFAULT_DIR
     DEFAULT_DIST_REAL_MACRO = _MACRO_DIR / "dist_real_pro.seq"
     DEFAULT_DIST_POLAR_MACRO = _MACRO_DIR / "dist_polar_pro.seq"
     
@@ -148,8 +153,6 @@ class DistortionAnalyzer:
             macro_dir: 宏文件目录
             auto_connect: 是否自动连接 CODE V
         """
-        if not _HAS_WIN32:
-            raise RuntimeError("需要 pywin32: pip install pywin32")
         if not _HAS_NUMPY:
             raise RuntimeError("需要 numpy: pip install numpy")
             
@@ -163,6 +166,8 @@ class DistortionAnalyzer:
     
     def connect(self) -> 'DistortionAnalyzer':
         """连接 CODE V COM 接口"""
+        if not _HAS_WIN32:
+            raise RuntimeError("需要 pywin32: pip install pywin32")
         if self._cv is None:
             self._cv = win32com.client.Dispatch("CODEV.Application")
             try:
@@ -212,23 +217,6 @@ class DistortionAnalyzer:
         """
         self.cmd(f'IN "{lens_path}"')
         self._current_lens = lens_path
-        return self
-    
-    def get_zoom_info(self) -> Dict:
-        """获取变焦系统信息"""
-        result = self.cmd('ZOO ?')
-        # 解析输出，例如: "There are  4 zoom positions in the system"
-        match = re.search(r'(\d+)\s+zoom\s+position', result, re.IGNORECASE)
-        num_zooms = int(match.group(1)) if match else 1
-        
-        return {
-            'num_zoom_positions': num_zooms,
-            'raw_output': result
-        }
-    
-    def set_zoom(self, zoom_pos: int) -> 'DistortionAnalyzer':
-        """设置变焦位置"""
-        self.cmd(f'ZOO {zoom_pos}')
         return self
 
     @staticmethod
@@ -421,7 +409,8 @@ class DistortionAnalyzer:
                            use_polar: bool = False,
                            max_radius: float = 0,
                            wavelength: str = "RED",
-                           wl_index: int = 2) -> DistortionGrid:
+                           wl_index: int = 2,
+                           tag: str = "r") -> DistortionGrid:
         """
         获取畸变网格数据
 
@@ -437,6 +426,7 @@ class DistortionAnalyzer:
             wavelength: 传给宏的#6参数，控制绘图颜色（如 "RED"/"GRE"/"BLU"）
             wl_index:  1-based 波长索引，用于 REF 切换追迹波长
                        （这才是真正决定追迹波长的参数）
+            tag: 输出文件标签（如 "r"/"g"/"b"），提供则保存 {tag}.txt
 
         Returns:
             DistortionGrid 对象
@@ -447,69 +437,66 @@ class DistortionAnalyzer:
         # internal zoom handling and causes all positions to return identical data.
 
         if use_polar:
-            return self._run_polar_macro(zoom_pos, max_radius, num_lines)
+            return self._run_polar_macro(zoom_pos, max_radius, num_lines, tag)
         else:
             return self._run_real_macro(zoom_pos, x_fov, y_fov, num_lines,
                                        panel_width, panel_height, wavelength,
-                                       wl_index)
+                                       wl_index, tag)
     
     def _run_real_macro(self, zoom_pos: int, x_fov: float, y_fov: float,
                        num_lines: int, panel_width: float,
                        panel_height: float,
                        wavelength: str = "RED",
-                       wl_index: int = 2) -> DistortionGrid:
+                       wl_index: int = 2,
+                       tag: str = "r") -> DistortionGrid:
         """运行 dist_real_pro.seq 宏
         
         重要：ARG6 "color" 只控制绘图颜色，不控制追迹波长。
         必须在调用宏前用 REF 切换参考波长，否则 multi-color
         模式下所有运行追迹同一波长，网格数据完全相同。
+        
+        Args:
+            tag: 输出文件标签（如 "r"/"g"/"b"），保存为 z{zoom}_{tag}.txt
         """
-        # 创建临时文件名
-        temp_file = str(Path(self.workdir) / f"dist_z{zoom_pos}_{int(time.time())}.txt")
+        out_name = f"z{zoom_pos}_{tag}.txt"
+        out_path = Path(self.workdir) / out_name
 
-        try:
-            # ---- 关键：切换追迹波长 ----
-            # ARG6 只控制绘图线条颜色，实际光线追迹使用的是 CODE V
-            # 当前的参考波长。必须用 REF 命令切换后才能获得不同
-            # 波长的真实畸变网格数据。
-            self.cmd(f'REF {wl_index}')
-            
-            # 重定向输出到文件
-            self.cmd(f"OUT '{temp_file}'")
+        # 关键：切换追迹波长
+        self.cmd(f'REF {wl_index}')
+        
+        # 重定向输出到目标文件
+        self.cmd(f"OUT '{out_path}'")
 
-            # 运行宏（参数 #6 = 绘图颜色，仅影响图表线条颜色）
-            macro_path = Path(self.macro_dir) / "dist_real_pro.seq"
-            cmd = (f'RUN "{macro_path}" {x_fov} {y_fov} {panel_width} {panel_height} '
-                   f'"" "{wavelength}" {num_lines} {zoom_pos} "Yes"')
-            self.cmd(cmd)
-            
-            # 恢复输出
-            self.cmd("OUT")
-            
-            # 等待文件写入
-            time.sleep(0.2)
-            
-            # 读取结果
-            result = self._read_temp_file(temp_file)
-            
-            # 解析网格数据
-            paraxial, actual = self._parse_grid_data(result, num_lines)
-            
-            return DistortionGrid(
-                paraxial=paraxial,
-                actual=actual,
-                zoom_pos=zoom_pos,
-                x_fov=x_fov,
-                y_fov=y_fov,
-                num_lines=num_lines
-            )
-            
-        finally:
-            # 清理临时文件
-            self._safe_remove(temp_file)
+        # 运行宏（参数 #6 = 绘图颜色，仅影响图表线条颜色）
+        macro_path = Path(self.macro_dir) / "dist_real_pro.seq"
+        cmd = (f'RUN "{macro_path}" {x_fov} {y_fov} {panel_width} {panel_height} '
+               f'"" "{wavelength}" {num_lines} {zoom_pos} "Yes"')
+        self.cmd(cmd)
+        
+        # 恢复输出
+        self.cmd("OUT")
+        
+        # 等待文件写入
+        time.sleep(0.2)
+        
+        # 读取结果
+        result = self._read_out_file(str(out_path))
+        
+        # 解析网格数据
+        paraxial, actual = self._parse_grid_data(result, num_lines)
+        
+        return DistortionGrid(
+            paraxial=paraxial,
+            actual=actual,
+            zoom_pos=zoom_pos,
+            x_fov=x_fov,
+            y_fov=y_fov,
+            num_lines=num_lines
+        )
     
     def _run_polar_macro(self, zoom_pos: int, max_radius: float,
-                        num_lines: int) -> DistortionGrid:
+                        num_lines: int,
+                        tag: str = "r") -> DistortionGrid:
         """运行 dist_polar_pro.seq 宏"""
         # 极坐标宏生成 plt 文件，需要解析
         macro_path = Path(self.macro_dir) / "dist_polar_pro.seq"
@@ -532,8 +519,8 @@ class DistortionAnalyzer:
             num_lines=num_lines
         )
     
-    def _read_temp_file(self, filepath: str, max_retries: int = 10) -> str:
-        """读取临时文件内容"""
+    def _read_out_file(self, filepath: str, max_retries: int = 10) -> str:
+        """读取 OUT 输出文件"""
         for _ in range(max_retries):
             try:
                 with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
@@ -541,13 +528,6 @@ class DistortionAnalyzer:
             except FileNotFoundError:
                 time.sleep(0.1)
         return ""
-    
-    def _safe_remove(self, filepath: str) -> None:
-        """安全删除文件"""
-        try:
-            Path(filepath).unlink(missing_ok=True)
-        except:
-            pass
     
     def _parse_grid_data(self, text: str, num_lines: int) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -851,9 +831,13 @@ class DistortionAnalyzer:
                           y_fov: float = 5.0,
                           num_lines: int = 21,
                           panel_width: float = 0.0,
-                          panel_height: float = 0.0) -> Dict[int, DistortionGrid]:
+                          panel_height: float = 0.0,
+                          tag: str = "r") -> Dict[int, DistortionGrid]:
         """
         批量分析多个变焦位置
+        
+        Args:
+            tag: 输出文件标签，文件命名 z{zoom}_{tag}.txt（由 _run_real_macro 自动加前缀）
         
         Returns:
             {zoom_pos: DistortionGrid} 字典
@@ -867,7 +851,8 @@ class DistortionAnalyzer:
                 y_fov=y_fov,
                 num_lines=num_lines,
                 panel_width=panel_width,
-                panel_height=panel_height
+                panel_height=panel_height,
+                tag=tag
             )
             results[zoom_pos] = grid
         return results
