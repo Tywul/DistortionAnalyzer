@@ -1574,6 +1574,7 @@ class DistortionGUI(QMainWindow):
         p, _ = QFileDialog.getOpenFileName(self, self._t("open_seq_title"), "", "SEQ (*.seq);;All (*)")
         if p:
             self.ed_seq.setText(p)
+            self._grid_cache.clear()  # 导入 SEQ → 清空缓存（无论新旧文件）
             self._load_wavelengths(p)
             self._populate_corr_seq_info()
             self._loaded_seq_path = p
@@ -1799,7 +1800,6 @@ class DistortionGUI(QMainWindow):
         if self._loaded_seq_path != seq:
             self._load_wavelengths(seq)
             self._populate_corr_seq_info()
-            self._grid_cache.clear()  # 更换镜头 → 清空缓存
 
         # ── 检查缓存：全部命中则跳过 CODE V ──
         seq = self.ed_seq.text().strip()
