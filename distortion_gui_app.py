@@ -45,7 +45,7 @@ WL_COLORS = ['red', 'green', 'blue', 'orange', 'purple', 'cyan',
 # ── i18n / help ──
 I18N = {
     "zh": {
-        "app_title": "畸变分析器 V1.2",
+        "app_title": "畸变分析器 V1.3",
         "status_tip": "加载镜头文件后，点击开始分析。",
         "settings": "设置",
         "language": "界面语言",
@@ -151,6 +151,9 @@ I18N = {
         "heatmap_only": "仅热力图",
         "grid_vectors": "矢量",
         "heatmap": "热力图",
+        "ps_mag_title": "① 欧氏距离 |Δ|",
+        "ps_dx_title": "② 水平差 ΔX（右红/左蓝）",
+        "ps_dy_title": "③ 竖直差 ΔY（上红/下蓝）",
         "app_help_title": "帮助",
         "error_title": "错误",
         "hint_title": "提示",
@@ -160,7 +163,7 @@ I18N = {
         "browse_output_dir": "选择输出目录",
     },
     "en": {
-        "app_title": "Distortion Analyzer V1.2",
+        "app_title": "Distortion Analyzer V1.3",
         "status_tip": "Load a lens file, then click Start Analysis.",
         "settings": "Settings",
         "language": "Language",
@@ -266,6 +269,9 @@ I18N = {
         "heatmap_only": "Heatmap Only",
         "grid_vectors": "Grid Vectors",
         "heatmap": "Heatmap",
+        "ps_mag_title": "1) Euclidean |Δ|",
+        "ps_dx_title": "2) ΔX (right=red / left=blue)",
+        "ps_dy_title": "3) ΔY (up=red / down=blue)",
         "app_help_title": "Help",
         "error_title": "Error",
         "hint_title": "Hint",
@@ -1071,7 +1077,8 @@ class DistortionGUI(QMainWindow):
 
         # ---- Right: canvas with Vectors / Heatmap tabs ----
         canvas_vec = self._build_canvas_tab("fig_psv", "canvas_psv", "tb_psv", "Grid Vectors")
-        canvas_hm = self._build_canvas_tab("fig_psh", "canvas_psh", "tb_psh", "Heatmap")
+        canvas_hm = self._build_canvas_tab("fig_psh", "canvas_psh", "tb_psh", "Heatmap",
+                                           figsize=(19, 6.8))
         self._right_tabs_ps = QTabWidget()
         self._right_tabs_ps.addTab(canvas_vec, "  \u27A1\ufe0f " + self._t("grid_vectors") + "  ")
         self._right_tabs_ps.addTab(canvas_hm, "  \U0001F321\ufe0f " + self._t("heatmap") + "  ")
@@ -1080,7 +1087,7 @@ class DistortionGUI(QMainWindow):
         return w
 
     # === Canvas builder (matplotlib tabs) ===
-    def _build_canvas_tab(self, fig_attr, canvas_attr, toolbar_attr, title):
+    def _build_canvas_tab(self, fig_attr, canvas_attr, toolbar_attr, title, figsize=(8, 6)):
         """Build a single matplotlib canvas tab (in-tab embedding, not popup)."""
         _init_mpl()
         from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -1088,7 +1095,7 @@ class DistortionGUI(QMainWindow):
 
         tab = QWidget()
         tl = QVBoxLayout(tab)
-        fig = Figure(figsize=(8, 6))
+        fig = Figure(figsize=figsize)
         canvas = FigureCanvas(fig)
         canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         tl.addWidget(canvas)
@@ -1930,10 +1937,13 @@ class DistortionGUI(QMainWindow):
                 p = str(Path(out_dir) / f'ps_vectors_Z{ref_id}_vs_Z{tgt_id}.png')
                 self.fig_psv.savefig(p, dpi=200, bbox_inches='tight')
                 saved.append(p)
-            if fmt in ('both', 'heatmap') and hasattr(self, 'fig_psh'):
-                p = str(Path(out_dir) / f'ps_heatmap_Z{ref_id}_Z{tgt_id}.png')
-                self.fig_psh.savefig(p, dpi=200, bbox_inches='tight')
-                saved.append(p)
+            if fmt in ('both', 'heatmap') and self.result:
+                res = self.result.get('results', {})
+                for sfx in ('mag', 'dx', 'dy'):
+                    p = str(Path(out_dir) / f'ps_{sfx}_Z{ref_id}_Z{tgt_id}.png')
+                    saved.append(self._save_figure_on_fig(
+                        self._render_ps_single, p, (9, 8),
+                        res, ref_id, tgt_id, sfx))
             if saved:
                 self._log(f"Exported: " + ", ".join(saved))
                 QMessageBox.information(self, self._t("saved_title"), self._t("saved_message").format(path="\n".join(saved)))
@@ -2014,9 +2024,7 @@ class DistortionGUI(QMainWindow):
                     self.fig_psv.tight_layout()
                     self.canvas_psv.draw()
                 if fmt in ('both', 'heatmap'):
-                    self.fig_psh.clear()
-                    ax = self.fig_psh.add_subplot(111)
-                    self._render_ps_heatmap(ax, results, ref_id, tgt_id, x_fov, y_fov)
+                    self._render_ps_heatmap(self.fig_psh, results, ref_id, tgt_id, x_fov, y_fov)
                     self.fig_psh.tight_layout()
                     self.canvas_psh.draw()
                 self._log("Pupil Swim result drawn on canvas.")
@@ -2190,19 +2198,45 @@ class DistortionGUI(QMainWindow):
             results, ref_id, tgt_id, x_fov, y_fov)
 
     # ---- Pupil Swim: Heatmap popup ----
-    def _render_ps_heatmap(self, ax, results, ref_id, tgt_id, x_fov, y_fov):
-        """Render pupil swim displacement heatmap onto ax (shared by popup & export)."""
+    def _render_ps_heatmap(self, fig, results, ref_id, tgt_id, x_fov, y_fov):
+        """Render pupil swim as 3 side-by-side panels on `fig`:
+        [0] Euclidean magnitude   [1] ΔX   [2] ΔY
+        ΔX / ΔY use a diverging map: outward (relative to image centre)
+        = red, inward = blue, white at zero.
+        """
+        fig.clear()
         if ref_id not in results or tgt_id not in results:
+            ax = fig.add_subplot(111)
             ax.text(.5, .5, "No data", ha='center',
                     transform=ax.transAxes, color='red', fontsize=13)
             return
 
         rR, rT = results[ref_id], results[tgt_id]
-        title_str = f"Pupil Swim Heatmap: Z{ref_id} -> Z{tgt_id}"
-        self._draw_heatmap_pair(ax, rR, rT, title_str, iqr_tab='ps')
-        ax.set_aspect('equal')
-        ax.set_xlabel('X (mm)', fontsize=11); ax.set_ylabel('Y (mm)', fontsize=11)
-        self._apply_coord_range(ax, self.result.get('xlim', 0), self.result.get('ylim', 0))
+        xlim = self.result.get('xlim', 0)
+        ylim = self.result.get('ylim', 0)
+        axes = fig.subplots(1, 3)
+        self._draw_ps_component(axes[0], rR, rT, 'mag', self._t("ps_mag_title"), xlim, ylim)
+        self._draw_ps_component(axes[1], rR, rT, 'dx',  self._t("ps_dx_title"),  xlim, ylim)
+        self._draw_ps_component(axes[2], rR, rT, 'dy',  self._t("ps_dy_title"),  xlim, ylim)
+        fig.suptitle(f"Pupil Swim: Z{ref_id} → Z{tgt_id}", fontweight='bold', fontsize=11)
+
+    def _render_ps_single(self, fig, results, ref_id, tgt_id, kind):
+        """Render ONE pupil-swim component (mag / dx / dy) on its own figure —
+        used for per-component PNG export."""
+        fig.clear()
+        if ref_id not in results or tgt_id not in results:
+            ax = fig.add_subplot(111)
+            ax.text(.5, .5, "No data", ha='center',
+                    transform=ax.transAxes, color='red', fontsize=13)
+            return
+        rR, rT = results[ref_id], results[tgt_id]
+        ax = fig.add_subplot(111)
+        key = {'mag': "ps_mag_title", 'dx': "ps_dx_title", 'dy': "ps_dy_title"}[kind]
+        self._draw_ps_component(ax, rR, rT, kind, self._t(key),
+                                self.result.get('xlim', 0),
+                                self.result.get('ylim', 0))
+        fig.suptitle(f"Pupil Swim: Z{ref_id} → Z{tgt_id}",
+                     fontweight='bold', fontsize=11)
 
     def _draw_ps_heatmap_popup(self):
         """Pupil Swim displacement heatmap."""
@@ -2212,10 +2246,10 @@ class DistortionGUI(QMainWindow):
         out_dir = self.ed_out_ps.text().strip()
         x_fov = self.result.get('x_fov', 26.565)
         y_fov = self.result.get('y_fov', 26.565)
-        self._show_figure(
+        self._show_figure_on_fig(
             self._render_ps_heatmap,
-            f"Pupil Swim Heatmap: Z{ref_id} -> Z{tgt_id}", 11, 9,
-            f'ps_heatmap_Z{ref_id}_Z{tgt_id}.png', out_dir,
+            f"Pupil Swim: Z{ref_id} -> Z{tgt_id}", 20, 7.5,
+            f'ps_maps_Z{ref_id}_Z{tgt_id}.png', out_dir,
             results, ref_id, tgt_id, x_fov, y_fov)
 
     # ====================================================================
@@ -2264,6 +2298,78 @@ class DistortionGUI(QMainWindow):
         ax.set_title(title_str, fontweight='bold', fontsize=10)
         ax.legend(loc='upper right', fontsize=7)
 
+    # ---- Pupil Swim: single component panel (mag / dx / dy) ----
+    def _draw_ps_component(self, ax, rR, rT, kind, title_str, xlim=0, ylim=0):
+        """Draw one pupil-swim component panel.
+
+        Data comes from exactly the same arrays the vector plot uses:
+            U = rT.actual[:,:,0] - rR.actual[:,:,0]      (ΔX)
+            V = rT.actual[:,:,1] - rR.actual[:,:,1]      (ΔY)
+            mag = sqrt(U^2 + V^2)
+
+        kind='mag' → 'hot' sequential map.
+        kind='dx'  → ΔX, 'RdBu_r' diverging, red = moves right / blue = moves left.
+        kind='dy'  → ΔY, 'RdBu_r' diverging, red = moves up   / blue = moves down.
+        """
+        from matplotlib.tri import Triangulation, LinearTriInterpolator
+        from matplotlib.colors import TwoSlopeNorm
+
+        X = rR['actual'][:, :, 0]
+        Y = rR['actual'][:, :, 1]
+        U = rT['actual'][:, :, 0] - X
+        V = rT['actual'][:, :, 1] - Y
+
+        if kind == 'mag':
+            Z = np.sqrt(U ** 2 + V ** 2)
+            cmap, norm, cbar_lbl = 'hot', None, 'Disp. (mm)'
+        else:
+            Z = U if kind == 'dx' else V
+            cmap = 'RdBu_r'
+            vmax = float(np.nanmax(np.abs(Z))) or 1.0
+            norm = TwoSlopeNorm(vmin=-vmax, vcenter=0.0, vmax=vmax)
+            cbar_lbl = ('ΔX (mm)' if kind == 'dx' else 'ΔY (mm)')
+
+        xf, yf, zf = X.flatten(), Y.flatten(), Z.flatten()
+        mask = np.ones(len(zf), dtype=bool)
+        n_rm = 0
+        iqr_en, iqr_f = self._get_iqr_settings('ps')
+        if iqr_en:
+            mask, n_rm, _, _ = self._iqr_mask(zf, factor=iqr_f)
+
+        tri = Triangulation(xf[mask], yf[mask])
+        xi = np.linspace(X.min(), X.max(), 200)
+        yi = np.linspace(Y.min(), Y.max(), 200)
+        Xi, Yi = np.meshgrid(xi, yi)
+        Zi = LinearTriInterpolator(tri, zf[mask])(Xi, Yi)
+
+        kw = dict(shading='gouraud', cmap=cmap)
+        if norm is not None:
+            kw['norm'] = norm
+        im = ax.pcolormesh(Xi, Yi, Zi, **kw)
+        cb = ax.figure.colorbar(im, ax=ax, fraction=0.035, pad=0.015,
+                                shrink=0.72, aspect=16)
+        cb.set_label(cbar_lbl, fontsize=7)
+        cb.ax.tick_params(labelsize=6)
+
+        if n_rm > 0:
+            ax.scatter(xf[~mask], yf[~mask], c='cyan', s=22, marker='x',
+                       linewidths=1, zorder=5)
+        # stats box
+        zv = zf[mask]
+        if zv.size:
+            txt = (f'Max={np.nanmax(np.abs(zv))*1e3:.1f}um  '
+                   f'RMS={np.sqrt(np.nanmean(zv**2))*1e3:.1f}um')
+            ax.text(0.02, 0.02, txt, transform=ax.transAxes, fontsize=6.5,
+                    va='bottom', bbox=dict(boxstyle='round',
+                                           facecolor='wheat', alpha=0.8))
+        ax.set_aspect('equal')
+        ax.set_xlabel('X (mm)', fontsize=8)
+        ax.set_ylabel('Y (mm)', fontsize=8)
+        ax.tick_params(labelsize=7)
+        self._apply_coord_range(ax, xlim, ylim)
+        ax.set_title(f'{title_str}  (outliers removed: {n_rm})',
+                     fontweight='bold', fontsize=8.5, pad=6)
+
     # ---- Heatmap Pair (on given axes) ----
     def _draw_heatmap_pair(self, ax, rR, rT, title_str, iqr_tab='grid'):
         """Draw triangulated displacement heatmap."""
@@ -2301,6 +2407,15 @@ class DistortionGUI(QMainWindow):
         dlg.fig.tight_layout()
         dlg.show()
 
+    def _show_figure_on_fig(self, render_fn, title, width, height, save_name,
+                             out_dir, *render_args):
+        """Same as _show_figure but render_fn receives the Figure (multi-panel)."""
+        dlg = FigureDialog(self, title=title, width=width, height=height, dpi=100)
+        dlg.set_save_path(str(Path(out_dir) / save_name))
+        render_fn(dlg.fig, *render_args)
+        dlg.fig.tight_layout()
+        dlg.show()
+
     # ---------- Export ----------
     def _save_figure(self, render_fn, path, figsize, *render_args):
         """Create non-interactive figure, call render_fn(ax, *args), save to path."""
@@ -2311,6 +2426,18 @@ class DistortionGUI(QMainWindow):
         FigureCanvasAgg(fig)
         ax = fig.add_subplot(111)
         render_fn(ax, *render_args)
+        fig.tight_layout()
+        fig.savefig(path, bbox_inches='tight')
+        return path
+
+    def _save_figure_on_fig(self, render_fn, path, figsize, *render_args):
+        """Same as _save_figure but render_fn receives the Figure (multi-panel)."""
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        fig = Figure(figsize=figsize, dpi=200)
+        FigureCanvasAgg(fig)
+        render_fn(fig, *render_args)
         fig.tight_layout()
         fig.savefig(path, bbox_inches='tight')
         return path
@@ -2357,10 +2484,11 @@ class DistortionGUI(QMainWindow):
                         results, ref_id, tgt_id, x_fov, y_fov))
 
                 if fmt in ('both', 'heatmap'):
-                    p = str(Path(out_dir) / f'ps_heatmap_Z{ref_id}_Z{tgt_id}.png')
-                    saved.append(self._save_figure(
-                        self._render_ps_heatmap, p, (11, 9),
-                        results, ref_id, tgt_id, x_fov, y_fov))
+                    for kind, sfx in (('mag', 'mag'), ('dx', 'dx'), ('dy', 'dy')):
+                        p = str(Path(out_dir) / f'ps_{sfx}_Z{ref_id}_Z{tgt_id}.png')
+                        saved.append(self._save_figure_on_fig(
+                            self._render_ps_single, p, (9, 8),
+                            results, ref_id, tgt_id, kind))
 
             if saved:
                 self._log(f"Exported {len(saved)} file(s):\n" + "\n".join(saved))

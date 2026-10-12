@@ -39,6 +39,13 @@ g.txt
 b.txt
 svrapi_lens*.csv
 
+# Per-lens output folders created at runtime (one per SEQ file name)
+AR0*/
+MODULE*/
+BOUNDLESS*/
+ESIGHT*/
+XIMMERSE*/
+
 # PyInstaller working directory
 *.manifest
 *.zip

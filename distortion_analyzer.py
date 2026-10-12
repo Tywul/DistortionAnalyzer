@@ -532,19 +532,19 @@ class DistortionAnalyzer:
     def _parse_grid_data(self, text: str, num_lines: int) -> Tuple[np.ndarray, np.ndarray]:
         """
         解析畸变网格数据
-        
+
         数据格式:
             Rel X Fld  Rel Y Fld      Parax X      Parax Y       Real X       Real Y
         """
         paraxial_grid = np.zeros((num_lines, num_lines, 2))
         actual_grid = np.zeros((num_lines, num_lines, 2))
-        
+
         lines = text.split('\n')
         data_started = False
-        
+
         for line in lines:
             line = line.strip()
-            
+
             # 查找数据表头
             if "Rel X Fld" in line and "Parax X" in line:
                 data_started = True
