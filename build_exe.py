@@ -1,5 +1,5 @@
 """
-Build Distortion Analyzer V1.3 into standalone .exe
+Build Distortion Analyzer V1.3.1 into standalone .exe
 Requires: pyinstaller, PyQt5, matplotlib, numpy, pywin32
 """
 import os
