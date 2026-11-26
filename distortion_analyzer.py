@@ -64,6 +64,18 @@ try:
 except ImportError:
     _HAS_WIN32 = False
 
+try:
+    import pythoncom
+    _HAS_PYTHONCOM = True
+except ImportError:
+    _HAS_PYTHONCOM = False
+
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    _HAS_PSUTIL = False
+
 
 @dataclass
 class DistortionGrid:
@@ -160,26 +172,84 @@ class DistortionAnalyzer:
         self.macro_dir = macro_dir or self._MACRO_DIR
         self._cv = None
         self._current_lens: Optional[str] = None
+        self._com_initialized = False
         
         if auto_connect:
             self.connect()
     
     def connect(self) -> 'DistortionAnalyzer':
-        """连接 CODE V COM 接口"""
+        """连接 CODE V COM 接口。
+
+        同事机器上CODE V 常处于异常状态（残留僵尸进程 / 手动开着主界面 /
+        版本与注册表不一致），表现为 COM "服务器运行失败"。这里做三件事：
+          1. 在工作线程里显式 CoInitialize（QThread 里必需，否则 COM 调用
+             可能随机失败——这正是"有时好有时坏"的典型原因）
+          2. 连接后立刻发一条探针命令，验证通道真的通
+          3. 失败时把底层原因和排查建议一起抛出，不再吞异常
+        """
         if not _HAS_WIN32:
             raise RuntimeError("需要 pywin32: pip install pywin32")
+
         if self._cv is None:
-            self._cv = win32com.client.Dispatch("CODEV.Application")
+            # (1) COM 线程初始化 —— 在非主线程里必须显式做
+            if _HAS_PYTHONCOM and not getattr(self, '_com_initialized', False):
+                try:
+                    pythoncom.CoInitialize()
+                    self._com_initialized = True
+                except Exception as e:
+                    _logger.warning("CoInitialize 失败(继续尝试): %s", e)
+
+            # (2) 连接
+            try:
+                self._cv = win32com.client.Dispatch("CODEV.Application")
+            except Exception as e:
+                raise RuntimeError(
+                    f"无法连接 CODE V COM 接口 ({type(e).__name__}: {e})。\n"
+                    f"排查步骤：\n"
+                    f"  1) 任务管理器结束所有 CodeV / OpticStudio 进程后重试\n"
+                    f"  2) 确认 CODE V 已正确安装且已启动过一次\n"
+                    f"  3) 若 CODE V 有更新，重启电脑让 COM 注册表刷新"
+                ) from e
+
             try:
                 self._cv.StartCodeV()
             except Exception:
+                # 已在运行时会抛异常，属正常情况
                 pass
-            self._cv.Command(f'CD "{self.workdir}"')
+
+            # (3) 探针验证通道
+            try:
+                self._cv.Command(f'CD "{self.workdir}"')
+                probe = self._cv.CommandOutput
+                if probe is None:
+                    probe = ""
+            except Exception as e:
+                raise RuntimeError(
+                    f"CODE V COM 已连接但无法执行命令 ({type(e).__name__}: {e})。\n"
+                    f"通常是因为连到了残留的僵尸/异常实例。\n"
+                    f"排查步骤：\n"
+                    f"  1) 任务管理器结束所有 CodeV 进程\n"
+                    f"  2) 重新运行本程序"
+                ) from e
+
+            _logger.info("CODE V COM 就绪，工作目录 %s", self.workdir)
+
         return self
     
     def disconnect(self) -> None:
         """断开 CODE V 连接"""
-        self._cv = None
+        if self._cv is not None:
+            try:
+                # 不要调 Quit：CODE V 是单实例服务，误杀用户手动打开的窗口
+                self._cv = None
+            except Exception:
+                pass
+        if getattr(self, '_com_initialized', False) and _HAS_PYTHONCOM:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
+            self._com_initialized = False
 
     @contextmanager
     def session(self) -> Generator:
@@ -207,15 +277,69 @@ class DistortionAnalyzer:
     def cmd(self, command: str) -> str:
         """执行 CODE V 命令"""
         return self.cv.Command(command)
-    
+
+    def last_error(self) -> str:
+        """从 CODE V command buffer 中提取真正的错误/警告。
+
+        注意：`CommandOutput` 并不只包含错误。`IN "lens.seq"` 会把整个
+        镜头内容（RDM/LEN/各面/材料/变焦）回显出来，所以"输出非空"绝不能
+        当成出错判据。真正的错误必须按标记筛选。
+        """
+        try:
+            raw = str(self.cv.CommandOutput or "")
+        except Exception:
+            return ""
+        return self.extract_problems(raw)
+
+    @staticmethod
+    def extract_problems(raw: str) -> str:
+        """从 CODE V 输出里挑出真正的错误/警告行，过滤正常回显。
+
+        CODE V 的本地化标记：
+          警告 / WARNING  -> 非致命，但可能影响追迹（例如玻璃无折射率数据）
+          错误/ ERROR   -> 致命
+        只返回命中的行，不含正常命令回显。
+        """
+        if not raw:
+            return ""
+        keys = ("警告", "錯誤", "错误", "WARNING", "Error", "ERROR",
+                "notfound", "not found", "无法", "無法")
+        hits = []
+        for line in raw.splitlines():
+            s = line.strip()
+            if not s:
+                continue
+            if any(k in s for k in keys):
+                hits.append(s)
+        return "\n".join(hits)
+
     def load_lens(self, lens_path: str) -> 'DistortionAnalyzer':
         """
         加载镜头文件
-        
+
         Args:
             lens_path: SEQ 文件路径
         """
+        p = Path(lens_path)
+        if not p.is_file():
+            raise FileNotFoundError(f"SEQ 文件不存在: {lens_path}")
         self.cmd(f'IN "{lens_path}"')
+
+        # 检查是否有真正的错误/警告。
+        # 注意：`IN` 会回显整个镜头内容，所以只能用 extract_problems 按标记
+        # 筛选，不能用"输出非空"判错（那会对所有镜头误报）。
+        msgs = [m for m in self.last_error().splitlines() if m.strip()]
+        fatal = [m for m in msgs
+                 if any(k in m for k in ("错误", "錯誤", "ERROR", "Error"))]
+        if fatal:
+            raise RuntimeError(
+                f"CODE V 载入镜头时报错：\n  " + "\n  ".join(fatal)
+                + f"\n（文件: {lens_path}）"
+            )
+        if msgs:
+            # 警告不阻断流程，但必须记录——玻璃缺折射率数据等会直接影响追迹
+            _logger.warning("CODE V 载入镜头时产生警告:\n  " + "\n  ".join(msgs))
+
         self._current_lens = lens_path
         return self
 
@@ -461,28 +585,45 @@ class DistortionAnalyzer:
         out_name = f"z{zoom_pos}_{tag}.txt"
         out_path = Path(self.workdir) / out_name
 
-        # 关键：切换追迹波长
+        # 宏文件必须存在，否则 RUN 会静默失败（CODE V 只在 buffer 里报错）
+        macro_path = Path(self.macro_dir) / "dist_real_pro.seq"
+        if not macro_path.is_file():
+            raise FileNotFoundError(
+                f"畸变宏文件不存在: {macro_path}\n"
+                f"请确认 exe 同目录下有 dist_real_pro.seq"
+            )
+
+        # 切换追迹波长
         self.cmd(f'REF {wl_index}')
-        
+
         # 重定向输出到目标文件
         self.cmd(f"OUT '{out_path}'")
 
         # 运行宏（参数 #6 = 绘图颜色，仅影响图表线条颜色）
-        macro_path = Path(self.macro_dir) / "dist_real_pro.seq"
         cmd = (f'RUN "{macro_path}" {x_fov} {y_fov} {panel_width} {panel_height} '
                f'"" "{wavelength}" {num_lines} {zoom_pos} "Yes"')
         self.cmd(cmd)
-        
+
         # 恢复输出
         self.cmd("OUT")
-        
-        # 等待文件写入
-        time.sleep(0.2)
-        
+
+        # 抓取 CODE V 的警告/错误——跨机器排障唯一可靠线索。
+        # last_error() 内部已按标记过滤，不会把正常回显当成错误。
+        macro_msg = self.last_error()
+        if macro_msg.strip():
+            _logger.warning("CODE V 宏返回警告/错误 (Z%s@%s):\n  %s",
+                            zoom_pos, tag, macro_msg.strip())
+
+        # 阻塞等待文件真正写完。
+        # 关键：连续追迹多个波长时，CODE V 的 OUT 刷盘是异步的。如果不等到
+        # 文件稳定就返回，下一次 RUN 会打断上一次的写盘，导致某个通道的
+        # txt 只写了一半（表现：拟合结果不对，重跑几次才对）。
+        self._wait_file_stable(str(out_path), expect_min_bytes=num_lines * 40)
+
         # 读取结果
         result = self._read_out_file(str(out_path))
-        
-        # 解析网格数据
+
+        # 解析（解析不到数据点时 _parse_grid_data 会抛异常并带上 CODE V 输出）
         paraxial, actual = self._parse_grid_data(result, num_lines)
         
         return DistortionGrid(
@@ -519,16 +660,50 @@ class DistortionAnalyzer:
             num_lines=num_lines
         )
     
-    def _read_out_file(self, filepath: str, max_retries: int = 10) -> str:
-        """读取 OUT 输出文件"""
-        for _ in range(max_retries):
+    def _read_out_file(self, filepath: str, stable_checks: int = 3,
+                       timeout: float = 10.0) -> str:
+        """读取 OUT 输出文件（内部先阻塞等文件稳定）。"""
+        self._wait_file_stable(filepath, stable_checks=stable_checks,
+                               timeout=timeout)
+        try:
+            return Path(filepath).read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            return ""
+
+    @staticmethod
+    def _wait_file_stable(filepath: str, stable_checks: int = 3,
+                          timeout: float = 10.0,
+                          expect_min_bytes: int = 0) -> bool:
+        """轮询直到文件大小连续 stable_checks 次不变（或超时）。
+
+        expect_min_bytes: 文件至少应达到的字节数，用来排除"还没开始写就被
+        判定为稳定"的情况（此时 size 仍是 0或 极小）。
+
+        返回 True 表示等到了稳定，False 表示超时。
+        """
+        path = Path(filepath)
+        deadline = time.time() + timeout
+        last_size = -1
+        stable = 0
+        while time.time() < deadline:
             try:
-                with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
-                    return f.read()
+                size = path.stat().st_size
             except FileNotFoundError:
                 time.sleep(0.1)
-        return ""
-    
+                continue
+            big_enough = size >= max(1, expect_min_bytes)
+            if big_enough and size == last_size:
+                stable += 1
+                if stable >= stable_checks:
+                    return True
+            else:
+                stable = 0
+            last_size = size
+            time.sleep(0.12)
+        _logger.warning("等待文件稳定超时: %s (size=%s)",
+                        filepath, last_size)
+        return False
+
     def _parse_grid_data(self, text: str, num_lines: int) -> Tuple[np.ndarray, np.ndarray]:
         """
         解析畸变网格数据
@@ -541,6 +716,7 @@ class DistortionAnalyzer:
 
         lines = text.split('\n')
         data_started = False
+        n_parsed = 0
 
         for line in lines:
             line = line.strip()
@@ -581,13 +757,101 @@ class DistortionAnalyzer:
                     if 0 <= i < num_lines and 0 <= j < num_lines:
                         paraxial_grid[i, j] = [parax_x, parax_y]
                         actual_grid[i, j] = [real_x, real_y]
-                        
+                        n_parsed += 1
+
                 except (ValueError, IndexError):
                     continue
-        
+
+        # 解析结果自检：全0说明 OUT 文件为空/未写完/格式不符，必须显式报错，
+        # 否则下游拿到一份全零网格却毫无察觉（表现为"没报错但没数据"）。
+        if n_parsed == 0:
+            head = text.strip().splitlines()
+            cv_msg = (self.last_error() or "").strip()
+            raise RuntimeError(
+                f"CODE V 未产出网格数据（期望 {num_lines * num_lines} 点，实得 0）。\n"
+                f"  OUT 文件: {len(text)} 字符，"
+                f"开头: {(head[0][:100] if head else '<空>')}\n"
+                + (f"  CODE V 输出: {cv_msg}\n" if cv_msg else "")
+                + f"  工作目录: {self.workdir}"
+            )
+        if n_parsed < num_lines * num_lines:
+            _logger.warning(
+                "网格数据不完整：%d/%d 点（部分光线可能追迹失败）",
+                n_parsed, num_lines * num_lines)
+
         return paraxial_grid, actual_grid
-    
-    def calculate_pupil_swim(self, grid_ref: DistortionGrid, 
+
+    # ---------- Environment diagnostics ----------
+    @staticmethod
+    def diagnose() -> str:
+        """收集 CODE V / COM / 运行环境信息，供跨机器排障使用。
+
+        把结果发给开发者即可定位 90% 的"别人机器上跑不起来"问题，
+        不需要在故障机器上手工敲命令。
+        """
+        import platform
+        out: list[str] = []
+        out.append("=== DistortionAnalyzer 环境诊断 ===")
+        out.append(f"时间        : {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        out.append(f"操作系统    : {platform.platform()}")
+        out.append(f"Python      : {sys.version.split()[0]}  ({sys.executable})")
+        out.append(f"frozen      : {getattr(sys, 'frozen', False)}")
+        if getattr(sys, 'frozen', False):
+            out.append(f"  exe 路径  : {sys.executable}")
+            out.append(f"  _MEIPASS  : {getattr(sys, '_MEIPASS', 'N/A')}")
+        out.append(f"numpy       : {np.__version__}")
+        out.append(f"pywin32     : {'OK' if _HAS_WIN32 else 'MISSING'}")
+        out.append(f"pythoncom   : {'OK' if _HAS_PYTHONCOM else 'MISSING'}")
+
+        # 外部资源文件
+        base = (Path(sys.executable).parent if getattr(sys, 'frozen', False)
+                else Path(__file__).parent)
+        out.append(f"资源目录    : {base}")
+        for fn in ("dist_real_pro.seq", "dist_polar_pro.seq", "displays.json"):
+            f = base / fn
+            out.append(f"  {fn:22s} {'OK' if f.is_file() else '缺失!!'}")
+
+        # COM 连接
+        out.append("--- CODE V COM ---")
+        try:
+            cv = win32com.client.Dispatch("CODEV.Application")
+            out.append("  Dispatch   : OK")
+            try:
+                cv.StartCodeV()
+                out.append("  StartCodeV : OK")
+            except Exception as e:
+                out.append(f"  StartCodeV : {type(e).__name__} "
+                           f"(通常表示已在运行，属正常)")
+            try:
+                ver = cv.Command("VER")
+                out.append(f"  VER        : {str(ver).strip()[:200]}")
+            except Exception as e:
+                out.append(f"  VER        : 失败 {type(e).__name__}: {e}")
+            try:
+                probs = DistortionAnalyzer.extract_problems(
+                    str(cv.CommandOutput or ''))
+                out.append(f"  警告/错误   : {probs[:300] if probs else '（无）'}")
+            except Exception as e:
+                out.append(f"  警告/错误   : 读取失败 {type(e).__name__}")
+        except Exception as e:
+            out.append(f"  Dispatch   : 失败 {type(e).__name__}: {e}")
+
+        # 相关进程
+        out.append("--- 相关进程 ---")
+        if _HAS_PSUTIL:
+            try:
+                for p in psutil.process_iter(['pid', 'name']):
+                    nm = (p.info['name'] or '')
+                    if any(k in nm.lower() for k in ('codev', 'opticstudio')):
+                        out.append(f"  pid={p.info['pid']}  {nm}")
+            except Exception as e:
+                out.append(f"  枚举失败: {e}")
+        else:
+            out.append("  (psutil 未安装，跳过)")
+        out.append("====================")
+        return "\n".join(out)
+
+    def calculate_pupil_swim(self, grid_ref: DistortionGrid,
                             grid_compare: DistortionGrid) -> PupilSwimResult:
         """
         计算 Pupil Swim

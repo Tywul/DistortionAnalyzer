@@ -161,6 +161,7 @@ I18N = {
         "open_seq_title": "打开 SEQ",
         "open_txt_title": "打开 Trace TXT",
         "browse_output_dir": "选择输出目录",
+        "diagnose": "诊断",
     },
     "en": {
         "app_title": "Distortion Analyzer V1.3",
@@ -279,6 +280,7 @@ I18N = {
         "open_seq_title": "Open SEQ",
         "open_txt_title": "Open Trace TXT",
         "browse_output_dir": "Select Output Directory",
+        "diagnose": "Diagnose",
     },
 }
 _current_lang = "zh"
@@ -469,9 +471,11 @@ class AnalysisWorker(QThread):
                             grid, gs, x_fov=x_fov, y_fov=y_fov,
                             wavelength=wl_val, wl_index=wl_index)
                     except Exception as e:
-                        self.progress.emit(f"  Z{zid}@{wl_label} failed: {e}")
+                        self.progress.emit(
+                            f"  ✗ Z{zid}@{wl_label} 追迹失败: {type(e).__name__}: {e}")
                         results[(zid, wi)] = self._pack_grid_result(
-                            None, gs, wavelength=wl_val, wl_index=wl_index)
+                            None, gs, wavelength=wl_val, wl_index=wl_index,
+                            failed=True, error=f"{type(e).__name__}: {e}")
         else:
             wl_val = wavelengths[wl_choice - 1] if wl_choice <= len(wavelengths) else wavelengths[0]
             wl_label = f"{wl_val:.0f}nm"
@@ -492,9 +496,20 @@ class AnalysisWorker(QThread):
                         grid, gs, x_fov=x_fov, y_fov=y_fov,
                         wavelength=wl_val, wl_index=wl_choice)
                 except Exception as e:
-                    self.progress.emit(f"  Z{zid} failed: {e}")
+                    self.progress.emit(
+                        f"  ✗ Z{zid} 追迹失败: {type(e).__name__}: {e}")
                     results[zid] = self._pack_grid_result(
-                        None, gs, wavelength=wl_val, wl_index=wl_choice)
+                        None, gs, wavelength=wl_val, wl_index=wl_choice,
+                        failed=True, error=f"{type(e).__name__}: {e}")
+
+        # 汇总失败情况，让"没数据"变成可见的明确错误
+        n_failed = sum(1 for v in results.values() if v.get('failed'))
+        if n_failed:
+            errs = sorted({str(v.get('error', '')) for v in results.values()
+                            if v.get('failed')})
+            self.progress.emit(
+                f"⚠ 有 {n_failed}/{len(results)} 组追迹失败，"
+                f"图中这些位置为 0（非真实数据）。原因：\n    " + "\n    ".join(errs))
 
         return {
             'mode': 'grid',
@@ -574,6 +589,7 @@ class CorrectionWorker(QObject):
         work_dir = str(Path(self.seq_path).parent)
         WL_TAGS = {1: 'r', 2: 'g', 3: 'b'}
         labels = ["R", "G", "B"]
+        analyzer = None
 
         try:
             self.progress.emit("Connecting CODE V ...")
@@ -591,15 +607,33 @@ class CorrectionWorker(QObject):
                         panel_width=self.panel_w, panel_height=self.panel_h,
                         wl_index=wl, wavelength="GRE",
                         tag=wl_tag)
-                    self.progress.emit(f"  -> z{self.zoom}_{wl_tag}.txt")
+                    # 明确等该通道文件落盘后再追下一个波长，否则 CODE V 异步
+                    # 刷盘会互相打断，导致某通道只写了一半。
+                    out_f = Path(work_dir) / f"z{self.zoom}_{wl_tag}.txt"
+                    ok = analyzer._wait_file_stable(
+                        str(out_f), stable_checks=3, timeout=15.0,
+                        expect_min_bytes=self.num_lines ** 2 * 40)
+                    size = out_f.stat().st_size if out_f.is_file() else 0
+                    if ok:
+                        self.progress.emit(f"  -> z{self.zoom}_{wl_tag}.txt ({size} B)")
+                    else:
+                        self.progress.emit(
+                            f"  ✗ z{self.zoom}_{wl_tag}.txt 未写完 ({size} B)")
                 except Exception as e:
-                    self.progress.emit(f"  {label} failed: {e}")
+                    self.progress.emit(
+                        f"  ✗ {label} 追迹失败: {type(e).__name__}: {e}")
 
             self.progress.emit("CODE V done.")
-            analyzer.disconnect()
             self.finished.emit(work_dir, self.zoom, "")
         except Exception as e:
-            self.finished.emit("", self.zoom, f"CODE V error: {e}\n{traceback.format_exc()}")
+            self.finished.emit("", self.zoom,
+                                f"CODE V error: {e}\n{traceback.format_exc()}")
+        finally:
+            if analyzer is not None:
+                try:
+                    analyzer.disconnect()
+                except Exception:
+                    pass
 
 
 # ============================================================
@@ -691,6 +725,11 @@ class DistortionGUI(QMainWindow):
         self._btn_settings = btn_settings
         btn_settings.clicked.connect(self._show_settings)
         top_lo.addWidget(btn_settings)
+        btn_diag = self._register_text(QPushButton("  🩺 " + self._t("diagnose") + "  "),
+                                       "diagnose", template="  🩺 {label}  ")
+        btn_diag.setToolTip("收集环境与 CODE V 连接信息，便于排查运行问题")
+        btn_diag.clicked.connect(self._run_diagnose)
+        top_lo.addWidget(btn_diag)
         main_lo.addLayout(top_lo)
 
         # ---- Tab Widget ----
@@ -1241,11 +1280,26 @@ class DistortionGUI(QMainWindow):
         self._corr_ref_idx = ref_idx
 
         # Derive R/G/B wavelength indices
+        #
+        # 必须保证三者互不相同：CorrectionWorker 按 WL→tag 映射写
+        # z{zoom}_r/g/b.txt，索引重复会导致两个通道写同一个文件、互相覆盖，
+        # 表现为"只有部分通道有数据"。
+        # ref_idx 若正好落在最长或最短波长上，就顺延到剩余的中间波长。
         if len(wavelengths) >= 3:
-            wl_vals = [(i+1, v) for i, v in enumerate(wavelengths)]
-            self._corr_wl_r = max(wl_vals, key=lambda x: x[1])[0]
-            self._corr_wl_g = ref_idx
-            self._corr_wl_b = min(wl_vals, key=lambda x: x[1])[0]
+            wl_vals = [(i + 1, v) for i, v in enumerate(wavelengths)]
+            r_idx = max(wl_vals, key=lambda x: x[1])[0]
+            b_idx = min(wl_vals, key=lambda x: x[1])[0]
+            g_idx = ref_idx
+            if g_idx == r_idx:
+                # 参考波长= R，退到中间波长
+                mid = [i for i in range(1, len(wavelengths) + 1)
+                       if i not in (r_idx, b_idx)]
+                g_idx = mid[len(mid) // 2] if mid else r_idx
+            elif g_idx == b_idx:
+                mid = [i for i in range(1, len(wavelengths) + 1)
+                       if i not in (r_idx, b_idx)]
+                g_idx = mid[len(mid) // 2] if mid else b_idx
+            self._corr_wl_r, self._corr_wl_g, self._corr_wl_b = r_idx, g_idx, b_idx
         else:
             self._corr_wl_r = ref_idx
             self._corr_wl_g = ref_idx
@@ -1262,6 +1316,15 @@ class DistortionGUI(QMainWindow):
         if not hasattr(self, '_corr_wl_g') or self._corr_wl_g is None:
             QMessageBox.warning(self, self._t("error_title"), self._t("load_seq_first")); return
         wl_eff = [self._corr_wl_r, self._corr_wl_g, self._corr_wl_b]
+
+        # 三个通道必须是不同波长，否则会写到同一个 txt 文件互相覆盖
+        if len(set(wl_eff)) != len(wl_eff):
+            QMessageBox.warning(
+                self, self._t("error_title"),
+                f"R/G/B 波长索引重复: {wl_eff}\n"
+                f"这会导致多个通道写入同一个文件而互相覆盖。\n"
+                f"请检查镜头的波长定义。")
+            return
 
         # FOV from Tab 1 shared spinners
         halfx = self.sp_fovx_g.value()
@@ -1355,6 +1418,18 @@ class DistortionGUI(QMainWindow):
                 raise ValueError("R/G/B trace files must contain data")
             if not (len(data['r']) == len(data['g']) == len(data['b'])):
                 raise ValueError("R/G/B trace files have mismatched point counts")
+
+            # 点数必须等于网格规模，否则说明 txt 写了一半（CODE V 异步刷盘）
+            # —— 用残缺数据拟合会得到看似合理、实则错误的系数。
+            exp_pts = self.sp_gs_g.value() ** 2
+            for ch, nm in (("r", "R"), ("g", "G"), ("b", "B")):
+                got = len(data[ch])
+                if got != exp_pts:
+                    raise ValueError(
+                        f"{nm} 通道点数 {got} ≠ 期望 {exp_pts} "
+                        f"(grid_size={self.sp_gs_g.value()})\n"
+                        f"文件 {paths.get(ch)} 未写完或追迹中断，请重新运行。"
+                    )
 
             disdata = np.stack([data['r'], data['g'], data['b']], axis=2)
             p = self._corr_params()
@@ -1490,6 +1565,30 @@ class DistortionGUI(QMainWindow):
     def _show_settings(self):
         dlg = SettingsDialog(self)
         dlg.exec_()
+
+    def _run_diagnose(self):
+        """收集环境与 CODE V 连接信息，写入日志并保存到文件。"""
+        try:
+            from distortion_analyzer import DistortionAnalyzer
+            text = DistortionAnalyzer.diagnose()
+        except Exception as e:
+            text = f"诊断过程本身失败:\n{type(e).__name__}: {e}"
+
+        self._log(text)
+
+        # 保存到 exe 同目录，便于直接发给开发者
+        try:
+            base = (Path(sys.executable).parent if getattr(sys, 'frozen', False)
+                    else Path(__file__).parent)
+            p = base / "diagnose_report.txt"
+            p.write_text(text, encoding='utf-8')
+            self._log(f"诊断报告已保存: {p}")
+            QMessageBox.information(
+                self, self._t("hint_title"),
+                f"诊断报告已保存到:\n{p}\n\n请把该文件发给技术支持。")
+        except OSError as e:
+            QMessageBox.warning(self, self._t("error_title"),
+                                f"无法保存诊断报告: {e}")
 
     def _t(self, key):
         return I18N[_current_lang].get(key, key)
